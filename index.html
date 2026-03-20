@@ -1826,20 +1826,40 @@ function doGet(e) {
       const n     = financeSyms.length;
       const rows  = financeSyms.map(sym => [
         sym,
-        \`=IFERROR(GOOGLEFINANCE("\${sym}","closeyest"),"")\`,
-        \`=IFERROR(GOOGLEFINANCE("\${sym}","price"),"")\`
+        \`=IFERROR(GOOGLEFINANCE("\${sym}","price"),"")\`,
+        \`=IFERROR(GOOGLEFINANCE("\${sym}","close"),IFERROR(GOOGLEFINANCE("\${sym}","closeyest"),""))\`
       ]);
       sheet.getRange(1, 1, rows.length, 3).clearContent();
       sheet.getRange(1, 1, rows.length, 3).setValues(rows);
       SpreadsheetApp.flush();
       Utilities.sleep(4000);
       for (let i = 0; i < n; i++) {
-        const cy  = parseFloat(sheet.getRange(i + 1, 2).getValue());
-        const cur = parseFloat(sheet.getRange(i + 1, 3).getValue());
-        const val = cy > 0 ? cy : cur > 0 ? cur : 0;
+        const realtime = parseFloat(sheet.getRange(i + 1, 2).getValue());
+        const closing  = parseFloat(sheet.getRange(i + 1, 3).getValue());
+        // 優先即時價→最新收盤→前日收盤
+        const val = realtime > 0 ? realtime : closing > 0 ? closing : 0;
         if (val > 0) prices[financeSyms[i]] = val;
       }
       sheet.getRange(1, 1, rows.length, 3).clearContent();
+    }
+
+    // ── 1a. 美股 Yahoo Finance 備援（GOOGLEFINANCE 漏抓的） ──
+    {
+      const missedUS = financeSyms.filter(s => !s.includes(':') && !prices[s]);
+      if (missedUS.length > 0) {
+        missedUS.forEach(sym => {
+          try {
+            const yUrl = \`https://query1.finance.yahoo.com/v8/finance/chart/\${sym}?interval=1d&range=5d\`;
+            const resp = UrlFetchApp.fetch(yUrl, { muteHttpExceptions:true, headers:{'User-Agent':'Mozilla/5.0'} });
+            if (resp.getResponseCode() === 200) {
+              const d = JSON.parse(resp.getContentText());
+              const meta = d?.chart?.result?.[0]?.meta;
+              const p = meta?.regularMarketPrice || meta?.previousClose;
+              if (p && p > 0) prices[sym] = p;
+            }
+          } catch(ex) {}
+        });
+      }
     }
 
     // ── 1b. 匯率抓取（獨立於股票報價，確保即使無持倉也能更新匯率）──
