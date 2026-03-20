@@ -132,20 +132,11 @@ tbody td{padding:10px 12px;white-space:nowrap}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
-.mobile-header{display:none}.mobile-overlay{display:none}
 @media(max-width:768px){
-  .app{grid-template-columns:1fr}
-  .sidebar{display:none;position:fixed;top:0;left:0;bottom:0;z-index:300;width:260px;box-shadow:4px 0 24px rgba(0,0,0,0.5)}
-  .sidebar.open{display:flex}
-  .mobile-header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
-  .mobile-hamburger{background:none;border:1px solid var(--border2);border-radius:var(--r2);color:var(--text);font-size:18px;width:36px;height:36px;cursor:pointer;display:flex;align-items:center;justify-content:center}
-  .mobile-overlay.open{display:block;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:299}
-  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .app{grid-template-columns:1fr}.sidebar{display:none}
+  .stats-grid{grid-template-columns:repeat(3,1fr)}
   .import-grid,.charts-grid{grid-template-columns:1fr}
-  .page{padding:14px 12px}
-  .field-row{grid-template-columns:1fr}
-  .stat-value{font-size:16px}
-  .page-title{font-size:18px}
+  .page{padding:16px}
 }
 </style>
 </head>
@@ -180,16 +171,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
 </nav>
 
 <!-- ═══ MAIN ═══ -->
-<div class="mobile-overlay" id="mobile-overlay" onclick="closeMobileMenu()"></div>
 <main class="main">
-
-<!-- mobile top bar -->
-<div class="mobile-header">
-  <button class="mobile-hamburger" onclick="toggleMobileMenu()">☰</button>
-  <div class="logo" style="font-size:14px">PORT<span>FO</span>LIO</div>
-  <span class="spacer"></span>
-  <span id="mobile-page-name" style="font-size:10px;color:var(--muted)">儀表板</span>
-</div>
 
 <!-- ── DASHBOARD ── -->
 <div class="page active" id="page-dashboard">
@@ -761,9 +743,6 @@ function gotoPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-'+name)?.classList.add('active');
-  closeMobileMenu();
-  const nameMap={dashboard:'儀表板',holdings:'庫存持倉',realized:'已實現損益',charts:'圖表分析',cash:'現金管理',import:'匯入交易',basis:'基準持倉',log:'匯入記錄',sync:'備份與同步'};
-  const mp=document.getElementById('mobile-page-name'); if(mp) mp.textContent=nameMap[name]||name;
   const navMap = {dashboard:0,holdings:1,realized:2,charts:3,cash:4,import:5,basis:6,log:7,sync:8};
   const items = document.querySelectorAll('.nav-item');
   if (navMap[name] !== undefined) items[navMap[name]]?.classList.add('active');
@@ -2152,7 +2131,7 @@ function renderHoldings() {
   }
   function removeTd(sym) {
     const safe = sym.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    return `<td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">移除</button></td>`;
+    return `<td style="white-space:nowrap"><button class="btn btn-sm" onclick="editAvgCost('${safe}')" title="修改成本均價" style="margin-right:4px">✎</button><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">✕</button></td>`;
   }
   function srcTd(h) {
     const mktTag = h.market === 'ESB' ? ' <span class="tag" style="background:rgba(255,140,66,0.15);color:#ff8c42">興櫃</span>' : '';
@@ -2313,6 +2292,42 @@ function removeHolding(sym) {
   trades = trades.filter(t => t.symbol !== sym);
   save(KEYS.trades, trades);
   rebuildFromTrades();
+  renderHoldings();
+}
+
+function editAvgCost(sym) {
+  const h = inventory[sym];
+  if (!h) { alert('找不到持倉：' + sym); return; }
+  const mkt = h.market;
+  const curLabel = mkt === 'TW' ? 'NT$' : mkt === 'JP' ? '¥' : '$';
+  const curCost = h.avgCost;
+
+  const input = prompt(
+    `修改 ${sym}（${h.name}）的成本均價\n\n` +
+    `目前均價：${curLabel}${curCost.toFixed(mkt==='JP'?0:4)}\n` +
+    `持倉量：${fmtQty(h.qty)}\n\n` +
+    `請輸入新的成本均價（${curLabel}）：`,
+    curCost.toFixed(mkt==='JP'?0:4)
+  );
+  if (input === null) return;
+  const newCost = parseFloat(input);
+  if (isNaN(newCost) || newCost <= 0) { alert('請輸入有效的正數'); return; }
+
+  // 更新 inventory
+  inventory[sym].avgCost = newCost;
+  inventory[sym].totalCost = newCost * h.qty;
+  save(KEYS.inventory, inventory);
+
+  // 如果有 basis 也一併更新
+  const basis = load(KEYS.basis) || {};
+  if (basis[sym]) {
+    basis[sym].avgCost = newCost;
+    basis[sym].totalCost = newCost * basis[sym].qty;
+    save(KEYS.basis, basis);
+  }
+
+  addLog(`手動修改 ${sym} 成本均價：${curLabel}${curCost.toFixed(4)} → ${curLabel}${newCost.toFixed(4)}`, 'warn');
+  renderDashboard();
   renderHoldings();
 }
 
@@ -2957,19 +2972,6 @@ function clearAllData() {
   for (const key of Object.values(KEYS)) localStorage.removeItem(key);
   localStorage.removeItem('ptv2_gas_url');
   location.reload();
-}
-
-// ══════════════════════════════════════════════════
-// MOBILE MENU
-// ══════════════════════════════════════════════════
-function toggleMobileMenu(){
-  const s=document.querySelector('.sidebar'),o=document.getElementById('mobile-overlay');
-  if(s.classList.contains('open')){closeMobileMenu();}
-  else{s.classList.add('open');o.classList.add('open');}
-}
-function closeMobileMenu(){
-  document.querySelector('.sidebar')?.classList.remove('open');
-  document.getElementById('mobile-overlay')?.classList.remove('open');
 }
 
 // ══════════════════════════════════════════════════
