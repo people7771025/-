@@ -1,0 +1,2969 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Tracker v2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@400;600;700;800&display=swap');
+:root {
+  --bg:#090910; --bg2:#111119; --bg3:#1b1b28; --bg4:#22222f;
+  --border:rgba(255,255,255,0.06); --border2:rgba(255,255,255,0.12);
+  --text:#e4e4f0; --muted:#66667a; --dim:#2e2e40;
+  --green:#00e5a0; --green2:rgba(0,229,160,0.12); --green3:rgba(0,229,160,0.05);
+  --red:#ff4d6d; --red2:rgba(255,77,109,0.12);
+  --blue:#5b9fff; --blue2:rgba(91,159,255,0.1);
+  --gold:#ffd166; --gold2:rgba(255,209,102,0.1);
+  --purple:#b57bee; --purple2:rgba(181,123,238,0.1);
+  --orange:#ff8c42;
+  --r:10px; --r2:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);min-height:100vh;font-size:13px}
+/* ─ LAYOUT ─ */
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+/* ─ SIDEBAR ─ */
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-logo{padding:22px 20px 16px;border-bottom:1px solid var(--border)}
+.logo{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;letter-spacing:-0.3px}
+.logo span{color:var(--green)}
+.logo-sub{font-size:9px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-top:2px}
+.nav{padding:12px 10px;flex:1}
+.nav-section{font-size:9px;color:var(--dim);letter-spacing:0.12em;text-transform:uppercase;padding:10px 10px 6px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:var(--r2);cursor:pointer;color:var(--muted);transition:all 0.15s;font-size:12px;margin-bottom:2px}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--green2);color:var(--green)}
+.nav-icon{width:16px;text-align:center;font-size:14px;flex-shrink:0}
+.sidebar-bottom{padding:14px 12px;border-top:1px solid var(--border)}
+.storage-info{font-size:10px;color:var(--muted);line-height:1.7}
+.storage-bar-wrap{background:var(--bg3);border-radius:3px;height:3px;margin-top:6px}
+.storage-bar{background:var(--green);height:3px;border-radius:3px;transition:width 0.3s}
+/* ─ MAIN ─ */
+.main{overflow:auto}
+.page{display:none;padding:28px 32px}
+.page.active{display:block}
+/* ─ PAGE HEADER ─ */
+.page-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;margin-bottom:4px}
+.page-sub{color:var(--muted);font-size:11px;margin-bottom:24px}
+/* ─ CARDS ─ */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.card-title{font-size:10px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:14px;font-weight:500}
+/* ─ STATS BAR ─ */
+.stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px}
+.stat-label{font-size:9px;color:var(--muted);letter-spacing:0.09em;text-transform:uppercase;margin-bottom:7px}
+.stat-value{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;line-height:1}
+.stat-sub{font-size:9px;color:var(--muted);margin-top:5px}
+/* ─ TABLES ─ */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead th{padding:9px 12px;text-align:left;font-size:9px;font-weight:500;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s}
+tbody tr:hover{background:rgba(255,255,255,0.02)}
+tbody td{padding:10px 12px;white-space:nowrap}
+.sym{font-family:'Syne',sans-serif;font-weight:600;font-size:13px}
+/* ─ TAGS ─ */
+.tag{display:inline-block;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase}
+.tag-tw{background:var(--green2);color:var(--green)}
+.tag-us{background:var(--blue2);color:var(--blue)}
+.tag-opt{background:var(--purple2);color:var(--purple)}
+.tag-jp{background:rgba(255,77,109,0.12);color:#ff6b8a}
+.tag-buy{background:var(--green2);color:var(--green)}
+.tag-sell{background:var(--red2);color:var(--red)}
+.tag-basis{background:var(--gold2);color:var(--gold)}
+.tag-manual{background:rgba(255,140,66,0.12);color:var(--orange)}
+/* ─ COLORS ─ */
+.pos{color:var(--green)}.neg{color:var(--red)}.neu{color:var(--text)}
+/* ─ BUTTONS ─ */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--r2);font-size:11px;font-weight:600;letter-spacing:0.05em;cursor:pointer;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-family:'DM Mono',monospace;transition:all 0.15s}
+.btn:hover{border-color:var(--green);color:var(--green)}
+.btn-green{background:var(--green);color:#000;border-color:var(--green)}
+.btn-green:hover{background:#00cc8a;color:#000}
+.btn-red{background:var(--red2);color:var(--red);border-color:var(--red)}
+.btn-sm{padding:5px 10px;font-size:10px}
+.btn:disabled{opacity:0.35;cursor:not-allowed}
+/* ─ IMPORT CARDS ─ */
+.import-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.import-card{border:1px dashed var(--border2);border-radius:var(--r);padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg2);position:relative}
+.import-card:hover{border-color:var(--green);background:var(--green3)}
+.import-card.loaded{border-style:solid;border-color:var(--green)}
+.import-card input{display:none}
+.import-broker{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px}
+.import-hint{font-size:10px;color:var(--muted)}
+.import-icon{font-size:24px;margin-bottom:8px;opacity:0.5}
+.import-filename{font-size:9px;color:var(--green);margin-top:5px;word-break:break-all}
+.import-badge{position:absolute;top:8px;right:10px;font-size:9px;color:var(--green)}
+/* ─ BASIS INPUT ─ */
+.basis-table{width:100%;border-collapse:collapse}
+.basis-table input{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%}
+.basis-table input:focus{outline:none;border-color:var(--green)}
+.basis-table select{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px}
+/* ─ MODAL ─ */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto}
+.modal-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:6px}
+.modal-sub{color:var(--muted);font-size:11px;margin-bottom:20px;line-height:1.6}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.field label{font-size:10px;color:var(--muted);display:block;margin-bottom:4px;letter-spacing:0.05em}
+.field input,.field select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:8px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px}
+.field input:focus,.field select:focus{outline:none;border-color:var(--green)}
+/* ─ CHARTS ─ */
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.chart-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.chart-inner{position:relative;height:220px}
+/* ─ ALERT ─ */
+.alert{padding:12px 16px;border-radius:var(--r2);font-size:11px;line-height:1.6;margin-bottom:16px}
+.alert-info{background:var(--blue2);border:1px solid rgba(91,159,255,0.2);color:#a0c4ff}
+.alert-warn{background:var(--gold2);border:1px solid rgba(255,209,102,0.2);color:#ffe08a}
+.alert-green{background:var(--green2);border:1px solid rgba(0,229,160,0.2);color:#6effd0}
+/* ─ LOG ─ */
+.log{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:12px;font-size:10px;color:var(--muted);max-height:120px;overflow-y:auto;line-height:1.8;margin-top:12px}
+.log-line{padding:1px 0}.log-ok{color:var(--green)}.log-warn{color:var(--gold)}.log-err{color:var(--red)}
+/* ─ DIVIDER ─ */
+.divider{border:none;border-top:1px solid var(--border);margin:20px 0}
+/* ─ FLEX UTILS ─ */
+.flex{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.spacer{flex:1}
+/* ─ SCROLLBAR ─ */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}.sidebar{display:none}
+  .stats-grid{grid-template-columns:repeat(3,1fr)}
+  .import-grid,.charts-grid{grid-template-columns:1fr}
+  .page{padding:16px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══ SIDEBAR ═══ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo">PORT<span>FO</span>LIO</div>
+    <div class="logo-sub">v2 · Persistent</div>
+  </div>
+  <div class="nav">
+    <div class="nav-section">主要</div>
+    <div class="nav-item active" onclick="gotoPage('dashboard')"><span class="nav-icon">◈</span>儀表板</div>
+    <div class="nav-item" onclick="gotoPage('holdings')"><span class="nav-icon">▤</span>庫存持倉</div>
+    <div class="nav-item" onclick="gotoPage('realized')"><span class="nav-icon">◎</span>已實現損益</div>
+    <div class="nav-item" onclick="gotoPage('charts')"><span class="nav-icon">◫</span>圖表分析</div>
+    <div class="nav-item" onclick="gotoPage('cash')"><span class="nav-icon">◆</span>現金管理</div>
+    <div class="nav-section">資料管理</div>
+    <div class="nav-item" onclick="gotoPage('import')"><span class="nav-icon">↑</span>匯入交易紀錄</div>
+    <div class="nav-item" onclick="gotoPage('basis')"><span class="nav-icon">◉</span>基準持倉設定</div>
+    <div class="nav-item" onclick="gotoPage('log')"><span class="nav-icon">≡</span>匯入記錄</div>
+    <div class="nav-item" onclick="gotoPage('sync')"><span class="nav-icon">⇄</span>備份與同步</div>
+  </div>
+  <div class="sidebar-bottom">
+    <div class="storage-info">
+      <div id="storage-text">庫存：計算中…</div>
+      <div class="storage-bar-wrap"><div class="storage-bar" id="storage-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══ MAIN ═══ -->
+<main class="main">
+
+<!-- ── DASHBOARD ── -->
+<div class="page active" id="page-dashboard">
+  <div class="page-title">儀表板</div>
+  <div class="page-sub" id="dash-sub">載入中…</div>
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card"><div class="stat-label">總市值 (TWD)</div><div class="stat-value neu" id="s-totalval">—</div><div class="stat-sub" id="s-totalval-sub">—</div></div>
+    <div class="stat-card"><div class="stat-label">未實現損益</div><div class="stat-value" id="s-unrealized">—</div><div class="stat-sub" id="s-unrealized-pct">—</div></div>
+    <div class="stat-card"><div class="stat-label">已實現損益</div><div class="stat-value" id="s-realized">—</div><div class="stat-sub">FIFO/加權平均</div></div>
+    <div class="stat-card"><div class="stat-label">現金總額 (TWD)</div><div class="stat-value neu" id="s-cash">—</div><div class="stat-sub" id="s-cash-sub">—</div></div>
+    <div class="stat-card"><div class="stat-label">持倉標的</div><div class="stat-value neu" id="s-count">—</div><div class="stat-sub" id="s-count-sub">—</div></div>
+    <div class="stat-card"><div class="stat-label">USD/TWD</div><div class="stat-value neu" id="s-fx">—</div><div class="stat-sub" id="s-fx-sub">—</div></div>
+  </div>
+  <div class="flex" style="margin-bottom:16px">
+    <button class="btn btn-green" id="btn-refresh" onclick="refreshPrices()">⟳ 更新報價</button>
+    <button class="btn" onclick="showGasSetup()" style="font-size:10px">⚙ 設定報價來源</button>
+    <button class="btn" onclick="exportCSV()">↓ 匯出 CSV</button>
+    <button class="btn" onclick="exportBackup()" title="匯出完整 JSON 備份">↓ 備份</button>
+    <button class="btn" onclick="cloudSave()" title="上傳到 Google Drive">☁↑ 同步</button>
+    <span class="spacer"></span>
+    <span id="price-status" style="font-size:10px;color:var(--muted)"></span>
+    <span id="price-cached" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <!-- Top holdings mini table -->
+  <div class="card">
+    <div class="card-title">前10大持倉</div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>代碼</th><th>名稱</th><th>市場</th><th>持倉量</th><th>平均成本</th><th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th></tr></thead>
+      <tbody id="dash-top-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── HOLDINGS ── -->
+<div class="page" id="page-holdings">
+  <div class="page-title">庫存持倉</div>
+  <div class="page-sub">所有持倉（含基準 + 歷次匯入更新）</div>
+  <div class="flex" style="margin-bottom:16px">
+    <button class="btn btn-green" id="btn-refresh-h" onclick="refreshPrices()">⟳ 更新報價</button>
+    <button class="btn" onclick="showGasSetup()" style="font-size:10px">⚙ 設定報價來源</button>
+    <button class="btn" onclick="gotoPage('basis')">+ 手動新增/編輯</button>
+    <span id="price-status-h" style="font-size:10px;color:var(--muted)"></span>
+    <span class="spacer"></span>
+    <button class="btn" onclick="clearInventory()" style="border-color:var(--red);color:var(--red)">✕ 清除庫存</button>
+  </div>
+  <!-- 美股個股 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-us" style="font-size:11px;padding:3px 8px">US</span> 美股個股
+      <span id="us-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>代碼</th><th>名稱</th><th>持倉量</th><th>平均成本</th>
+        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-us"></tbody></table>
+    </div>
+  </div>
+  <!-- 美股ETF -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-us" style="font-size:11px;padding:3px 8px;background:rgba(91,159,255,0.18)">ETF</span> 美股 ETF
+      <span id="usetf-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>代碼</th><th>名稱</th><th>持倉量</th><th>平均成本</th>
+        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-usetf"></tbody></table>
+    </div>
+  </div>
+  <!-- 美股期權 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-opt" style="font-size:11px;padding:3px 8px">OPT</span> 美股期權
+      <span id="opt-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>合約</th><th>方向</th><th>口數</th><th>成本/口</th>
+        <th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-opt"></tbody></table>
+    </div>
+  </div>
+  <!-- 台股個股 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-tw" style="font-size:11px;padding:3px 8px">TW</span> 台股個股
+      <span id="tw-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>代碼</th><th>名稱</th><th>持倉量(股)</th><th>均價(TWD)</th>
+        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-tw"></tbody></table>
+    </div>
+  </div>
+  <!-- 台股ETF -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-tw" style="font-size:11px;padding:3px 8px;background:rgba(0,229,160,0.18)">ETF</span> 台股 ETF
+      <span id="twetf-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>代碼</th><th>名稱</th><th>持倉量(股)</th><th>均價(TWD)</th>
+        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-twetf"></tbody></table>
+    </div>
+  </div>
+  <!-- 日股個股 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-jp" style="font-size:11px;padding:3px 8px">🇯🇵 JP</span> 日股個股
+      <span id="jp-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>代碼</th><th>名稱</th><th>持倉量(股)</th><th>均價(JPY)</th>
+        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-jp"></tbody></table>
+    </div>
+  </div>
+  <!-- 日股ETF -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-jp" style="font-size:11px;padding:3px 8px;background:rgba(255,77,109,0.18)">🇯🇵 ETF</span> 日股 ETF
+      <span id="jpetf-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>代碼</th><th>名稱</th><th>持倉量(口)</th><th>均價(JPY)</th>
+        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-jpetf"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── REALIZED ── -->
+<div class="page" id="page-realized">
+  <div class="page-title">已實現損益</div>
+  <div class="page-sub">由匯入交易計算（FIFO/加權平均），基準持倉賣出同樣計入</div>
+  <div class="card">
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>賣出日期</th><th>代碼</th><th>名稱</th><th>市場</th>
+        <th>賣出量</th><th>成本</th><th>賣出金額</th><th>損益(TWD)</th><th>報酬率</th><th>來源</th>
+      </tr></thead>
+      <tbody id="realized-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── CHARTS ── -->
+<div class="page" id="page-charts">
+  <div class="page-title">圖表分析</div>
+  <div class="page-sub">基於目前庫存與報價</div>
+  <div class="charts-grid">
+    <div class="chart-wrap"><div class="card-title">資產分配</div><div class="chart-inner"><canvas id="chart-alloc"></canvas></div></div>
+    <div class="chart-wrap"><div class="card-title">前10大損益</div><div class="chart-inner"><canvas id="chart-pnl"></canvas></div></div>
+    <div class="chart-wrap"><div class="card-title">市場分布</div><div class="chart-inner"><canvas id="chart-mkt"></canvas></div></div>
+    <div class="chart-wrap"><div class="card-title">月度已實現損益</div><div class="chart-inner"><canvas id="chart-monthly"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ── IMPORT ── -->
+<div class="page" id="page-import">
+  <div class="page-title">匯入交易紀錄</div>
+  <div class="page-sub">每次匯入會自動去重（依日期+代碼+方向+數量），只新增不重複的交易</div>
+
+  <div class="alert alert-info">
+    💡 <strong>增量匯入原則：</strong>每次上傳新的對帳單，系統會比對已存在的交易紀錄，自動跳過重複項目，只合併新交易。不需要每次上傳完整歷史。
+  </div>
+
+  <div class="alert alert-green">
+    💰 <strong>現金連動：</strong>匯入交易後，系統會自動從對應的現金帳戶扣款（買入）或入帳（賣出/股利）。券商對應可在「現金管理」頁面設定。匯率於「更新報價」時自動抓取。<br>
+    &nbsp;&nbsp;&nbsp;嘉信 Schwab → 嘉信證券（USD）｜Firstrade → 第一證券（USD）｜永豐 → 永豐大戶（TWD）｜聯邦 → 聯邦newnew（TWD）｜統一 → 統一證券分戶帳（TWD）｜台新複委託 → 台新日幣（JPY）
+  </div>
+
+  <label class="import-card" id="icard-auto" style="display:flex;flex-direction:column;align-items:center;padding:28px 20px;margin-bottom:14px;cursor:pointer">
+    <input type="file" id="ifile-auto" accept=".xlsx,.xls,.csv" multiple>
+    <div class="import-icon" style="font-size:32px;opacity:0.5;margin-bottom:10px">↑</div>
+    <div class="import-broker" style="font-size:13px;margin-bottom:6px">點擊上傳交易對帳單（可同時選多個）</div>
+    <div class="import-hint" style="line-height:1.9;text-align:center">
+      Firstrade CSV &nbsp;·&nbsp; 嘉信 Schwab CSV &nbsp;·&nbsp; 永豐金 XLSX<br>
+      系統自動偵測券商格式，無需分開上傳
+    </div>
+  </label>
+  <div id="import-file-list" style="margin-bottom:12px;font-size:11px;color:var(--green)"></div>
+  <div class="log" id="import-log"><span style="color:var(--dim)">等待匯入…</span></div>
+
+  <hr class="divider">
+
+  <!-- 手動新增交易 -->
+  <div class="card" style="margin-top:4px">
+    <div class="card-title">手動新增單筆交易（適用定期定額、小券商等）</div>
+    <div class="field-row">
+      <div class="field"><label>代碼（如 2330 / AAPL）</label>
+        <input id="mt-sym" placeholder="2330" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+      <div class="field"><label>名稱（選填）</label>
+        <input id="mt-name" placeholder="台積電" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>市場</label>
+        <select id="mt-market" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+          <option value="TW">🇹🇼 TW 台股（加權平均）</option>
+          <option value="US">🇺🇸 US 美股（FIFO）</option>
+          <option value="JP">🇯🇵 JP 日股（FIFO）</option>
+          <option value="OPT">📋 OPT 期權</option>
+        </select>
+      </div>
+      <div class="field"><label>方向</label>
+        <select id="mt-side" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+          <option value="BUY">買入</option>
+          <option value="SELL">賣出</option>
+          <option value="DIVIDEND">股利派發（現金入帳）</option>
+          <option value="REINVEST">股利再投入（自動買入）</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>交易日期</label>
+        <input id="mt-date" type="date" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+      <div class="field"><label>數量（股利填 0 或派發股數）</label>
+        <input id="mt-qty" type="number" placeholder="1000" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>成交價 / 股利金額（每股或總額）</label>
+        <input id="mt-price" type="number" placeholder="850.00" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+      <div class="field"><label>手續費（含交易稅，原幣）</label>
+        <input id="mt-fee" type="number" placeholder="0" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>券商（對應現金帳戶交割）</label>
+        <select id="mt-broker" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+          <option value="Schwab">嘉信證券（美股）</option>
+          <option value="FT">Firstrade 第一證券（美股）</option>
+          <option value="永豐">永豐金證券（台股）</option>
+          <option value="聯邦">聯邦證券（台股）</option>
+          <option value="統一">統一證券（台股）</option>
+          <option value="台新">台新複委託（日股）</option>
+          <option value="手動">其他（不連動現金）</option>
+        </select>
+      </div>
+      <div class="field"><label>備註（選填）</label>
+        <input id="mt-note" placeholder="如：定期定額、配息等" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <div class="flex" style="gap:10px;margin-top:4px">
+      <button class="btn btn-green" onclick="addManualTrade()">+ 新增交易</button>
+      <span id="mt-status" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── BASIS ── -->
+<div class="page" id="page-basis">
+  <div class="page-title">基準持倉設定</div>
+  <div class="page-sub">上傳券商庫存報表，或手動輸入持倉作為起始基準</div>
+
+  <div class="alert alert-warn">
+    ⚠️ <strong>何時需要設定基準？</strong>若券商只提供近N個月的交易紀錄，先在此上傳「截至今日的庫存報表」作為基準，之後再匯入基準日之後的交易紀錄即可完整計算損益。
+  </div>
+
+  <div class="alert alert-info">
+    💡 <strong>台股說明：</strong>台灣券商採<strong>加權平均成本法</strong>，系統對台股（TW）自動使用加權平均。永豐庫存報表內的「成本均價」可直接使用。
+  </div>
+
+  <!-- 庫存上傳區 — 整合單一入口，自動辨識券商 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">① 上傳庫存報表（自動辨識券商）</div>
+    <label class="import-card" id="bcard-auto" style="display:flex;flex-direction:column;align-items:center;padding:28px 20px;margin-bottom:14px;cursor:pointer">
+      <input type="file" id="bfile-auto" accept=".xlsx,.xls,.csv" multiple>
+      <div class="import-icon" style="font-size:32px;opacity:0.5;margin-bottom:10px">↑</div>
+      <div class="import-broker" style="font-size:13px;margin-bottom:6px">點擊上傳庫存報表（可同時選多個）</div>
+      <div class="import-hint" style="line-height:1.9;text-align:center">
+        永豐金 XLSX &nbsp;·&nbsp; 統一證券 XLSX &nbsp;·&nbsp; Firstrade XLSX &nbsp;·&nbsp; 嘉信 Schwab CSV<br>
+        系統自動偵測券商格式，無需分開上傳
+      </div>
+    </label>
+    <div id="basis-file-list" style="margin-bottom:12px;font-size:11px;color:var(--green)"></div>
+    <div class="flex" style="margin-bottom:10px;gap:12px;align-items:center">
+      <label style="font-size:11px;color:var(--muted);white-space:nowrap">基準日期</label>
+      <input type="date" id="basis-upload-date" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px">
+      <span style="font-size:10px;color:var(--dim)">留空則用今日</span>
+    </div>
+    <div class="log" id="basis-log"><span style="color:var(--dim)">等待上傳庫存報表…</span></div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">② 手動新增單筆基準持倉</div>
+    <div class="field-row">
+      <div class="field"><label>代碼（如 2330 / AAPL）</label><input id="b-sym" placeholder="2330" /></div>
+      <div class="field"><label>名稱</label><input id="b-name" placeholder="台積電" /></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>市場</label>
+        <select id="b-market"><option value="TW">🇹🇼 TW 台股</option><option value="US">🇺🇸 US 美股</option><option value="JP">🇯🇵 JP 日股</option><option value="OPT">📋 OPT 期權</option></select>
+      </div>
+      <div class="field"><label>持倉量（股數）</label><input id="b-qty" type="number" placeholder="1000" /></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>平均成本（每股，台股用 TWD，美股用 USD）</label><input id="b-cost" type="number" placeholder="850.00" /></div>
+      <div class="field"><label>基準日期</label><input id="b-date" type="date" /></div>
+    </div>
+    <button class="btn btn-green" onclick="addBasis()">+ 加入庫存</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">③ 目前基準持倉</div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>代碼</th><th>名稱</th><th>市場</th><th>持倉量</th><th>均價</th><th>成本法</th><th>基準日</th><th>操作</th></tr></thead>
+      <tbody id="basis-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── CASH ── -->
+<div class="page" id="page-cash">
+  <div class="page-title">現金管理</div>
+  <div class="page-sub">依幣別分類管理各帳戶現金部位，自動換算台幣總額。匯率於「更新報價」時自動從 Google Finance 抓取。</div>
+
+  <!-- 現金總覽統計 -->
+  <div class="stats-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:20px" id="cash-stats-grid"></div>
+
+  <!-- 新增現金帳戶 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title">新增現金帳戶</div>
+    <div class="field-row">
+      <div class="field"><label>幣別</label>
+        <select id="cash-currency" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+          <option value="TWD">🇹🇼 TWD 新台幣</option>
+          <option value="USD">🇺🇸 USD 美元</option>
+          <option value="EUR">🇪🇺 EUR 歐元</option>
+          <option value="JPY">🇯🇵 JPY 日圓</option>
+          <option value="GBP">🇬🇧 GBP 英鎊</option>
+          <option value="CNY">🇨🇳 CNY 人民幣</option>
+          <option value="HKD">🇭🇰 HKD 港幣</option>
+          <option value="SGD">🇸🇬 SGD 新加坡幣</option>
+          <option value="AUD">🇦🇺 AUD 澳幣</option>
+          <option value="CAD">🇨🇦 CAD 加幣</option>
+          <option value="CHF">🇨🇭 CHF 瑞郎</option>
+          <option value="KRW">🇰🇷 KRW 韓元</option>
+          <option value="OTHER">🌐 其他</option>
+        </select>
+      </div>
+      <div class="field" id="cash-other-wrap" style="display:none"><label>自訂幣別代碼</label>
+        <input id="cash-other-code" placeholder="如 THB" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>帳戶名稱</label>
+        <input id="cash-account" placeholder="如：嘉信證券、台銀外匯、Line Bank" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+      <div class="field"><label>金額</label>
+        <input id="cash-amount" type="number" placeholder="10000" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>對台幣匯率（1 外幣 = ? TWD，台幣填 1）</label>
+        <input id="cash-fx" type="number" placeholder="32.0" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+      <div class="field"><label>備註（選填）</label>
+        <input id="cash-note" placeholder="" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <div class="flex" style="gap:10px;margin-top:4px">
+      <button class="btn btn-green" onclick="addCashAccount()">+ 新增帳戶</button>
+      <span id="cash-status" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+  </div>
+
+  <!-- 各幣別帳戶列表 -->
+  <div id="cash-sections"></div>
+
+  <hr class="divider">
+
+  <!-- 券商→現金帳戶對應設定 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title">券商 → 現金帳戶交割對應</div>
+    <div class="alert alert-info" style="margin-bottom:12px">
+      💡 匯入交易時，系統會根據以下對應自動從對應現金帳戶扣款（買入）或入帳（賣出/股利）。帳戶名稱須與上方新增的帳戶完全一致。
+    </div>
+    <div id="broker-map-table"></div>
+    <div class="flex" style="gap:10px;margin-top:10px">
+      <button class="btn btn-sm" onclick="addBrokerMapRow()">+ 新增對應</button>
+    </div>
+  </div>
+
+  <!-- 現金異動紀錄 -->
+  <div class="card">
+    <div class="card-title">現金異動紀錄（最近 50 筆）</div>
+    <div class="flex" style="margin-bottom:10px">
+      <button class="btn btn-sm" onclick="clearCashLog()">清除紀錄</button>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>日期</th><th>帳戶</th><th>幣別</th><th>類型</th><th>金額</th><th>說明</th>
+      </tr></thead>
+      <tbody id="cash-log-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── LOG ── -->
+<div class="page" id="page-log">
+  <div class="page-title">匯入記錄</div>
+  <div class="page-sub">每次匯入的詳細紀錄</div>
+  <div class="card">
+    <div class="flex" style="margin-bottom:12px">
+      <button class="btn btn-sm" onclick="clearImportLog()">清除記錄</button>
+    </div>
+    <div id="full-log" style="font-size:11px;color:var(--muted);line-height:2"></div>
+  </div>
+</div>
+
+<!-- ── SYNC ── -->
+<div class="page" id="page-sync">
+  <div class="page-title">備份與同步</div>
+  <div class="page-sub">跨裝置同步資料：JSON 檔案手動備份 + Google Drive 雲端自動同步</div>
+
+  <div class="alert alert-info">
+    💡 本系統資料儲存在瀏覽器 localStorage，換裝置需要備份還原或雲端同步。
+  </div>
+
+  <!-- 雲端同步 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">☁️ Google Drive 雲端同步
+      <span id="sync-cloud-status" style="margin-left:auto;font-size:10px;color:var(--muted)"></span>
+    </div>
+    <div style="color:var(--muted);font-size:11px;line-height:1.8;margin-bottom:14px">
+      透過你已設定的 Google Apps Script，將資料存到 Google Drive 的試算表中。在任何裝置開啟頁面後即可一鍵下載最新資料。
+    </div>
+    <div id="sync-cloud-info" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:10px;color:var(--muted);line-height:2;margin-bottom:14px;display:none"></div>
+    <div class="flex" style="gap:10px;flex-wrap:wrap">
+      <button class="btn btn-green" onclick="cloudSave()">☁↑ 上傳到雲端</button>
+      <button class="btn" onclick="cloudLoad()">☁↓ 從雲端下載</button>
+      <span id="sync-cloud-msg" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div style="margin-top:10px;font-size:10px;color:var(--dim)">
+      ※ 需要更新 GAS 程式碼（點「設定報價來源」→ 複製最新程式碼 → 重新部署）
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- JSON 備份 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title">📁 匯出備份 (JSON 檔案)</div>
+    <div style="color:var(--muted);font-size:11px;line-height:1.8;margin-bottom:14px">
+      將所有庫存、交易、現金帳戶、設定打包成 JSON 檔案下載。適合離線備份或傳檔到其他裝置。
+    </div>
+    <div class="flex" style="gap:10px">
+      <button class="btn btn-green" onclick="exportBackup()">↓ 匯出完整備份</button>
+      <button class="btn" onclick="exportCSV()">↓ 匯出持倉 CSV</button>
+      <span id="export-status" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+  </div>
+
+  <!-- JSON 還原 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title">📂 匯入還原 (JSON 檔案)</div>
+    <div class="alert alert-warn" style="margin-bottom:12px">
+      ⚠️ 匯入會<strong>覆蓋</strong>目前所有資料。建議先匯出備份。
+    </div>
+    <div class="flex" style="gap:10px;align-items:center;margin-bottom:12px">
+      <label class="btn" style="cursor:pointer">
+        ↑ 選擇備份檔案
+        <input type="file" id="import-backup-file" accept=".json" style="display:none">
+      </label>
+      <span id="import-backup-filename" style="font-size:11px;color:var(--green)"></span>
+    </div>
+    <div id="import-backup-preview" style="display:none;margin-bottom:14px">
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:14px;font-size:11px;color:var(--muted);line-height:2" id="import-backup-info"></div>
+      <div class="flex" style="gap:10px;margin-top:12px">
+        <button class="btn btn-green" onclick="confirmRestore()">確認還原</button>
+        <button class="btn" onclick="cancelRestore()">取消</button>
+      </div>
+    </div>
+    <span id="import-backup-status" style="font-size:11px"></span>
+  </div>
+
+  <!-- 危險操作 -->
+  <div class="card">
+    <div class="card-title" style="color:var(--red)">⚠ 危險操作</div>
+    <div class="flex" style="gap:10px">
+      <button class="btn" onclick="clearInventory()" style="border-color:var(--red);color:var(--red)">✕ 清除庫存</button>
+      <button class="btn" onclick="clearAllData()" style="border-color:var(--red);color:var(--red)">✕ 清除所有資料</button>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- ── ADD BASIS CONFIRM MODAL ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-body"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════
+// STORAGE SCHEMA
+// inventory[symbol] = {
+//   qty, avgCost, totalCost, name, market, broker,
+//   isOption, costMethod: 'FIFO'|'WAC', basisDate?
+// }
+// importedTrades = [{id, date, symbol, name, side, qty, price, amount, fee, market, broker, isOption}]
+// realizedPnL = [{symbol, name, market, broker, sellDate, cost, proceeds, pnl, pct, isOption}]
+// importLog = [{ts, msg, type}]
+// ══════════════════════════════════════════════════
+
+const KEYS = {
+  inventory: 'ptv2_inventory',
+  basis:     'ptv2_basis',
+  trades:    'ptv2_trades',
+  realized:  'ptv2_realized',
+  log:       'ptv2_log',
+  fx:        'ptv2_fx',
+  prices:    'ptv2_prices',      // 報價快取，重開頁面不需重抓
+  cash:      'ptv2_cash',       // 現金帳戶
+  cashFx:    'ptv2_cashFx',     // 現金匯率
+  brokerMap: 'ptv2_brokerMap',  // 券商→現金帳戶對應
+  cashLog:   'ptv2_cashLog'     // 現金異動紀錄
+};
+
+function load(k)   { try { return JSON.parse(localStorage.getItem(k)) || null } catch(e) { return null } }
+function save(k,v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch(e) { addLog('localStorage 寫入失敗：空間不足', 'err') } }
+
+let inventory  = load(KEYS.inventory)  || {};  // symbol → holding
+let trades     = load(KEYS.trades)     || [];  // all imported trades (deduped)
+let realized   = load(KEYS.realized)   || [];  // realized events
+let importLog  = load(KEYS.log)        || [];  // import log
+let prices     = load(KEYS.prices) || {};  // 從快取恢復，減少重抓次數
+let fxRate     = parseFloat(load(KEYS.fx)) || 32.0;
+let cashAccounts = load(KEYS.cash) || []; // [{id, currency, account, amount, fxToTWD, note}]
+let cashFxRates  = load(KEYS.cashFx) || { TWD:1, USD:32.0, EUR:34.5, JPY:0.22, GBP:40.5, CNY:4.5, HKD:4.1, SGD:24.0, AUD:21.0, CAD:23.5, CHF:36.0, KRW:0.024 };
+// 券商→現金帳戶對應（key=券商名, value=帳戶名稱）
+let brokerMap = load(KEYS.brokerMap) || {
+  'Schwab':       '嘉信證券',
+  'FT':           '第一證券',
+  '永豐':         '永豐大戶',
+  '聯邦':         '聯邦newnew',
+  '統一(庫存)':   '統一證券分戶帳',
+  '台新':         '台新日幣',
+  '手動':         ''
+};
+let cashLog = load(KEYS.cashLog) || []; // [{date, account, currency, amount, type, desc}]
+
+// ══════════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════════
+function gotoPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+name)?.classList.add('active');
+  const navMap = {dashboard:0,holdings:1,realized:2,charts:3,cash:4,import:5,basis:6,log:7,sync:8};
+  const items = document.querySelectorAll('.nav-item');
+  if (navMap[name] !== undefined) items[navMap[name]]?.classList.add('active');
+  if (name === 'charts') renderCharts();
+  if (name === 'holdings') renderHoldings();
+  if (name === 'realized') renderRealized();
+  if (name === 'basis') renderBasis();
+  if (name === 'cash') renderCash();
+  if (name === 'log') renderFullLog();
+  if (name === 'dashboard') renderDashboard();
+}
+
+// ══════════════════════════════════════════════════
+// FILE HANDLERS — 交易紀錄（單一入口自動偵測）
+// ══════════════════════════════════════════════════
+document.getElementById('ifile-auto').addEventListener('change', e => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  const listEl = document.getElementById('import-file-list');
+  listEl.innerHTML = files.map(f => `✓ ${f.name}`).join('<br>');
+  files.forEach(f => autoDetectAndParseImport(f));
+});
+
+function autoDetectAndParseImport(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    // XLSX → 讀取 header 判斷
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type:'array', cellDates:false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+      const allText = rows.map(r => r.join('|')).join('\n');
+      if (allText.includes('成交日') && (allText.includes('買賣') || allText.includes('成交價'))) {
+        addImportLog(`偵測到：永豐金交易對帳單（${file.name}）`);
+        parseSinopacFromRows(rows, file.name);
+      } else {
+        const firstRow = (rows.find(r => r.some(c => String(c).trim() !== '')) || []).join('|');
+        addImportLog(`無法辨識 XLSX 格式（${file.name}），首行: ${firstRow.substring(0,60)}`, 'err');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+  if (name.endsWith('.csv')) {
+    // CSV → 讀第一行判斷欄位
+    const reader = new FileReader();
+    reader.onload = e => {
+      const firstLines = e.target.result.substring(0, 500);
+      if (firstLines.includes('TradeDate') || firstLines.includes('RecordType') || firstLines.includes('CUSIP')) {
+        addImportLog(`偵測到：Firstrade 對帳單（${file.name}）`);
+        parseFT(file);
+      } else if (firstLines.includes('Fees & Comm') || firstLines.includes('Buy to Open') || firstLines.includes('"Action"')) {
+        addImportLog(`偵測到：嘉信 Schwab 對帳單（${file.name}）`);
+        parseSchwab(file);
+      } else {
+        // fallback: try both
+        addImportLog(`嘗試自動解析 CSV（${file.name}）…`, 'warn');
+        parseFT(file);
+      }
+    };
+    reader.readAsText(file);
+    return;
+  }
+  addImportLog(`不支援的格式：${file.name}`, 'err');
+}
+
+function addImportLog(msg, type='ok') {
+  const el = document.getElementById('import-log');
+  if (!el) return;
+  const ts = new Date().toLocaleTimeString('zh-TW');
+  el.innerHTML = `<div class="log-${type}">[${ts}] ${msg}</div>` + el.innerHTML;
+}
+function setImportDone(key, filename) {
+  addImportLog(`${key} 匯入完成：${filename}`, 'ok');
+}
+
+// ══════════════════════════════════════════════════
+// 手動新增交易
+// ══════════════════════════════════════════════════
+function addManualTrade() {
+  const sym    = (document.getElementById('mt-sym').value || '').replace(/\xa0/g,'').trim().toUpperCase();
+  const name   = (document.getElementById('mt-name').value || '').trim() || sym;
+  const market = document.getElementById('mt-market').value;
+  const side   = document.getElementById('mt-side').value;
+  const date   = document.getElementById('mt-date').value;
+  const qty    = parseFloat(document.getElementById('mt-qty').value) || 0;
+  const price  = parseFloat(document.getElementById('mt-price').value) || 0;
+  const fee    = parseFloat(document.getElementById('mt-fee').value) || 0;
+  const broker = document.getElementById('mt-broker').value;
+  const note   = (document.getElementById('mt-note').value || '').trim();
+
+  const st = document.getElementById('mt-status');
+  if (!sym)  { st.style.color='var(--red)'; st.textContent='請填寫代碼'; return; }
+  if (!date) { st.style.color='var(--red)'; st.textContent='請填寫日期'; return; }
+
+  if (side === 'DIVIDEND') {
+    // 股利派發：amount = price (總金額), qty can be 0
+    const divAmount = price;
+    if (divAmount <= 0) { st.style.color='var(--red)'; st.textContent='股利金額必須大於0'; return; }
+    const trade = {
+      date, symbol:sym, name, side:'DIVIDEND', qty:0, price:0,
+      amount:divAmount, fee, market, broker, isOption:false, note
+    };
+    mergeNewTrades([trade], '手動輸入', broker);
+    st.style.color = 'var(--green)';
+    st.textContent = `已新增：${sym} 股利 ${market==='TW'?'NT$':'$'}${divAmount} → ${brokerMap[broker]||'無對應帳戶'}`;
+  } else if (side === 'REINVEST') {
+    // 股利再投入：產生 dividend(cash in) + buy(cash out) 兩筆
+    if (qty <= 0) { st.style.color='var(--red)'; st.textContent='再投入股數必須大於0'; return; }
+    if (price <= 0) { st.style.color='var(--red)'; st.textContent='成交價必須大於0'; return; }
+    const amount = qty * price;
+    const divTrade = {
+      date, symbol:sym, name, side:'DIVIDEND', qty:0, price:0,
+      amount, fee:0, market, broker, isOption:false, note: note||'股利再投入(配息)'
+    };
+    const buyTrade = {
+      date, symbol:sym, name, side:'BUY', qty, price,
+      amount, fee, market, broker, isOption:false, note: note||'股利再投入(買入)'
+    };
+    mergeNewTrades([divTrade, buyTrade], '手動輸入', broker);
+    st.style.color = 'var(--green)';
+    st.textContent = `已新增：${sym} 再投入 ${qty}股 @${price}`;
+  } else {
+    if (qty <= 0) { st.style.color='var(--red)'; st.textContent='數量必須大於0'; return; }
+    if (price <= 0) { st.style.color='var(--red)'; st.textContent='成交價必須大於0'; return; }
+    const amount = qty * price;
+    const isOpt  = market === 'OPT';
+    const trade  = {
+      date, symbol:sym, name, side, qty, price,
+      amount, fee, market, broker, isOption:isOpt, note
+    };
+    mergeNewTrades([trade], '手動輸入', broker);
+    st.style.color = 'var(--green)';
+    st.textContent = `已新增：${side === 'BUY' ? '買入' : '賣出'} ${sym} ${qty}股 @${price} → ${brokerMap[broker]||broker}`;
+  }
+
+  addImportLog(`手動新增：${side} ${sym} @${price} 券商=${broker} (${date})`, 'ok');
+  ['mt-sym','mt-name','mt-qty','mt-price','mt-fee','mt-note'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  setTimeout(() => { const el=document.getElementById('mt-status'); if(el) el.textContent=''; }, 4000);
+}
+
+// ── 庫存報表 — 單一入口自動偵測 ──
+document.getElementById('bfile-auto').addEventListener('change', e => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  const listEl = document.getElementById('basis-file-list');
+  listEl.innerHTML = files.map(f => `✓ ${f.name}`).join('<br>');
+  files.forEach(f => autoDetectAndParseBasis(f));
+});
+
+function autoDetectAndParseBasis(file) {
+  const name = file.name.toLowerCase();
+  const isCsv  = name.endsWith('.csv');
+  const isXlsx = name.endsWith('.xlsx') || name.endsWith('.xls');
+
+  if (isCsv) {
+    // CSV → 嘉信 Schwab（目前唯一CSV庫存格式）
+    parseBasisSchwab(file);
+    return;
+  }
+  if (!isXlsx) { addBasisLog(`不支援的格式：${file.name}`, 'err'); return; }
+
+  // XLSX → 掃描所有行偵測格式（不只看第一行，FT第一行是摘要列）
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type:'array', cellDates:false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+    // 把所有行的內容串成一個大字串來偵測特徵
+    // 把每行轉成字串再合併，確保數字型態的儲存格也能比對
+    const allText = rows.map(r => r.map(v => String(v||'')).join('|')).join('\n');
+
+    if (allText.includes('股票代碼') && allText.includes('庫存股數')) {
+      addBasisLog(`偵測到：統一證券庫存（${file.name}）`);
+      parseBasisUnified(rows, file.name);
+    } else if (allText.includes('成本均價') && allText.includes('今日餘額')) {
+      addBasisLog(`偵測到：永豐金庫存（${file.name}）`);
+      parseBasisSinopac(rows, file.name);
+    } else if (allText.includes('代號') && (allText.includes('單位成本') || allText.includes('股數'))) {
+      addBasisLog(`偵測到：Firstrade庫存（${file.name}）`);
+      parseBasisFT(rows, file.name);
+    } else {
+      const preview = rows.slice(0,3).map(r=>r.map(v=>String(v||'')).join('|')).join(' // ');
+      addBasisLog(`無法辨識格式（${file.name}），前3行: ${preview.substring(0,120)}`, 'err');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setBasisDone(fname, broker) {
+  addBasisLog(`[${broker}] ${fname} 解析完成`, 'ok');
+}
+function getBasisDate() {
+  return document.getElementById('basis-upload-date').value || new Date().toISOString().slice(0,10);
+}
+function addBasisLog(msg, type='ok') {
+  const el = document.getElementById('basis-log');
+  const ts = new Date().toLocaleTimeString('zh-TW');
+  el.innerHTML = `<div class="log-${type}">[${ts}] ${msg}</div>` + el.innerHTML;
+  addLog(msg, type);
+}
+
+// ── 合併基準持倉：存到獨立的 KEYS.basis（同標的多券商 → 數量相加，加權平均）──
+function mergeBasisItems(items, source) {
+  const basis = load(KEYS.basis) || {};
+  let added=0, merged=0;
+  const basisDate = getBasisDate();
+  for (const item of items) {
+    if (!item.symbol || item.qty === 0) continue;
+    const sym    = item.symbol.replace(/\xa0/g,'').trim();  // 標準化key
+    const newQty = Math.abs(item.qty);
+    const newCost= Math.abs(item.avgCost);
+    if (newQty === 0 || newCost === 0) continue;
+    if (sym in basis) {
+      const old = basis[sym];
+      const oldQty = Math.abs(old.qty);
+      const totalQty = oldQty + newQty;
+      const weightAvg = totalQty > 0 ? (oldQty*old.avgCost + newQty*newCost) / totalQty : newCost;
+      old.qty        = totalQty;
+      old.avgCost    = weightAvg;
+      old.totalCost  = totalQty * weightAvg;
+      old.broker     = old.broker === source ? source : old.broker + '+' + source;
+      old.basisDate  = basisDate;
+      merged++;
+    } else {
+      basis[sym] = {
+        qty: newQty, avgCost: newCost, totalCost: newQty*newCost,
+        name: item.name || sym, market: item.market, broker: source,
+        isOption: item.isOption || false, isBasis: true, basisDate,
+        costMethod: (item.market === 'TW' || item.market === 'ESB') ? 'WAC' : 'FIFO'
+      };
+      added++;
+    }
+  }
+  save(KEYS.basis, basis);
+  addBasisLog(`[${source}] 新增 ${added}、合併 ${merged} 筆`, added+merged>0?'ok':'warn');
+  rebuildFromTrades();
+  renderBasis();
+}
+
+// ══════════════════════════════════════════════════
+// 庫存解析器 — 永豐金
+// 欄位: 商品(代碼+名稱) | 今日餘額 | 成本均價
+// ══════════════════════════════════════════════════
+function parseBasisSinopac(rows, filename) {
+  // 掃描所有行，找包含「商品」「今日餘額」「成本均價」的 header 行
+  let hi = -1;
+  for (let i=0; i<rows.length; i++) {
+    const rowStr = rows[i].map(v => String(v||'').trim()).join('|');
+    if (rowStr.includes('商品') && rowStr.includes('今日餘額') && rowStr.includes('成本均價')) {
+      hi = i; break;
+    }
+  }
+  if (hi < 0) {
+    addBasisLog(`永豐金庫存：找不到 header（商品|今日餘額|成本均價），共 ${rows.length} 行`, 'err');
+    return;
+  }
+  const h = rows[hi].map(v => String(v||'').trim());
+  const iItem    = h.findIndex(v => v === '商品');
+  const iQty     = h.findIndex(v => v.includes('今日餘額'));
+  const iAvgCost = h.findIndex(v => v.includes('成本均價'));
+  addBasisLog(`永豐金庫存：header row=${hi} iItem=${iItem} iQty=${iQty} iAvgCost=${iAvgCost}`);
+  const items = [];
+  for (let i=hi+1; i<rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every(v => v === '' || v === null || v === undefined)) continue;
+    const itemRaw = String(r[iItem]||'').trim();
+    if (!itemRaw || itemRaw === '合計') continue;
+    const parts = itemRaw.split(' ');
+    const symbol = parts[0];
+    if (!/^\d+/.test(symbol)) continue;
+    const qty     = parseFloat(String(r[iQty]||'').replace(/,/g,'')) || 0;
+    const avgCost = parseFloat(r[iAvgCost]) || 0;
+    addBasisLog(`  永豐 ${symbol} qty=${qty} avgCost=${avgCost}`);
+    if (qty <= 0 || avgCost <= 0) continue;
+    // 永豐庫存的「類別」欄（index 1）可能是「興櫃」
+    const iType = h.findIndex(v => String(v).includes('類別'));
+    const typeRaw = (iType >= 0 && r[iType]) ? String(r[iType]) : '';
+    const market = typeRaw.includes('興櫃') ? 'ESB' : 'TW';
+    items.push({ symbol, name:parts.slice(1).join(' '), qty, avgCost, market, isOption:false });
+  }
+  addBasisLog(`永豐金庫存：解析 ${items.length} 筆台股持倉`);
+  mergeBasisItems(items, '永豐(庫存)');
+}
+
+function parseBasisUnified(rows, filename) {
+  let hi = -1;
+  for (let i=0; i<rows.length; i++) {
+    if (rows[i].some(v => String(v).trim() === '股票代碼')) { hi=i; break; }
+  }
+  if (hi < 0) { addBasisLog('統一證券庫存：找不到 header 行', 'err'); return; }
+  const h = rows[hi];
+  const iCode = h.findIndex(v => String(v).includes('股票代碼'));
+  const iName = h.findIndex(v => String(v).includes('股票名稱'));
+  const iQty  = h.findIndex(v => String(v).includes('庫存股數'));
+  const iAvg  = h.findIndex(v => String(v).includes('成交均價'));
+  const iCost = h.findIndex(v => String(v).includes('投資成本'));
+  const items = [];
+  for (let i=hi+1; i<rows.length; i++) {
+    const r = rows[i];
+    const code = String(r[iCode]||'').trim();
+    if (!code || !/^\d+$/.test(code)) continue;
+    const name = String(r[iName]||'').trim();
+    const qty  = parseFloat(String(r[iQty]||'').replace(/,/g,'')) || 0;
+    if (qty <= 0) continue;
+    // 優先用成交均價，若為0則用投資成本÷庫存股數反推
+    let avgCost = parseFloat(r[iAvg]) || 0;
+    if (avgCost <= 0 && iCost >= 0) {
+      const totalCost = parseFloat(String(r[iCost]||'').replace(/,/g,'')) || 0;
+      avgCost = totalCost > 0 ? totalCost / qty : 0;
+    }
+    if (avgCost <= 0) continue;
+    // 判斷市場別：興櫃 → 'ESB'，其餘台股 → 'TW'
+    const iMkt = h.findIndex(v => String(v).includes('市場'));
+    const mktRaw = iMkt >= 0 ? String(r[iMkt]||'') : '';
+    const market = mktRaw.includes('興櫃') ? 'ESB' : 'TW';
+    items.push({ symbol:code, name, qty, avgCost, market, isOption:false });
+  }
+  addBasisLog(`統一證券：解析 ${items.length} 筆台股持倉`);
+  mergeBasisItems(items, '統一(庫存)');
+}
+
+// ══════════════════════════════════════════════════
+// 庫存解析器 — Firstrade
+// 格式: 欄位交錯（每欄後有空欄）
+// 代號(0) | 股數(1) | 單位成本(11)
+// ══════════════════════════════════════════════════
+function parseBasisFT(rows, filename) {
+  const items = [];
+  let inSection = false;
+  for (const r of rows) {
+    const c0 = String(r[0]||'').replace(/\xa0/g,'').trim();
+    if (c0 === '代號' || c0.replace(/\u00a0/g,'').trim() === '代號') { inSection = true; continue; }
+    if (c0.includes('總值') || (c0.includes('=') && c0.includes('$'))) { inSection = false; continue; }
+    if (!inSection || !c0) continue;
+    const qty     = parseFloat(r[1]) || 0;
+    const avgCost = parseFloat(r[11]) || 0;
+    if (qty === 0 && avgCost === 0) continue;
+    const isOpt = /\d{2}\/\d{2}\/\d{4}/.test(c0) || c0.split(' ').length > 2;
+    items.push({ symbol:c0, name:c0, qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
+  }
+  addBasisLog(`Firstrade：解析 ${items.length} 筆持倉（含期權）`);
+  mergeBasisItems(items, 'FT(庫存)');
+}
+
+// ══════════════════════════════════════════════════
+// 庫存解析器 — Schwab 嘉信（CSV）
+// 欄位: Symbol | Qty | Cost Basis（總成本） | Asset Type
+// ══════════════════════════════════════════════════
+function parseBasisSchwab(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split('\n');
+    let startLine = 0;
+    for (let i=0; i<lines.length; i++) {
+      if (lines[i].includes('"Symbol"') || lines[i].startsWith('Symbol')) { startLine=i; break; }
+    }
+    Papa.parse(lines.slice(startLine).join('\n'), { header:true, skipEmptyLines:true, complete(res) {
+      const items = [];
+      for (const r of res.data) {
+        const sym = (r['Symbol']||'').trim().replace(/"/g,'');
+        if (!sym || sym === 'Account Total' || sym === 'Cash & Cash Investments') continue;
+        const assetType = (r['Asset Type']||'').trim();
+        if (assetType === 'Cash and Money Market') continue;
+        const qty = parseFloat((r['Qty (Quantity)']||'').replace(/[,"]/g,'')) || 0;
+        const totalCost = parseFloat((r['Cost Basis']||'').replace(/[$,"]/g,'')) || 0;
+        if (totalCost === 0) continue;
+        const avgCost = qty !== 0 ? Math.abs(totalCost / qty) : 0;
+        const isOpt = assetType === 'Option';
+        items.push({ symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+          qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
+      }
+      addBasisLog(`嘉信：解析 ${items.length} 筆持倉（含期權）`);
+      mergeBasisItems(items, 'Schwab(庫存)');
+    }});
+  };
+  reader.readAsText(file);
+}
+
+// ── 永豐金 XLSX → rows 橋接（給交易紀錄自動偵測用）──
+function parseSinopacFromRows(rows, filename) {
+  // 模擬原parseSinopac但接受已解析的rows
+  let startRow = 0;
+  for (let i=0; i<rows.length; i++) {
+    if (rows[i].includes('成交日') || rows[i].includes('成交日期')) { startRow=i; break; }
+  }
+  const h = rows[startRow];
+  const idxDate=h.indexOf('成交日'), idxItem=h.indexOf('商品'),
+        idxSide=h.indexOf('買賣'), idxQty=h.indexOf('數量'),
+        idxPrice=h.indexOf('成交價'), idxFee=h.indexOf('手續費'), idxTax=h.indexOf('交易稅');
+  const raw=[];
+  for(let i=startRow+1;i<rows.length;i++){
+    const r=rows[i];
+    const dateRaw=r[idxDate];
+    if(!dateRaw||String(dateRaw).startsWith('合計'))continue;
+    const date=String(dateRaw).replace(/\//g,'-');
+    const item=String(r[idxItem]||'').trim();if(!item)continue;
+    const parts=item.split(' ');const sym=parts[0];const name=parts.slice(1).join(' ');
+    const sideRaw=String(r[idxSide]||'');
+    const isBuy=sideRaw.includes('買'),isSell=sideRaw.includes('賣');
+    if(!isBuy&&!isSell)continue;
+    const qty=Math.abs(parseFloat(String(r[idxQty]||'').replace(/,/g,''))||0);
+    const price=parseFloat(r[idxPrice])||0;
+    const fee=(parseFloat(String(r[idxFee]||'').replace(/,/g,''))||0)+(parseFloat(String(r[idxTax]||'').replace(/,/g,''))||0);
+    raw.push({date,symbol:sym,name,side:isBuy?'BUY':'SELL',qty,price,amount:qty*price,fee,market:'TW',broker:'永豐',isOption:false});
+  }
+  mergeNewTrades(raw, filename, '永豐');
+  addImportLog(`永豐金：解析 ${raw.length} 筆交易`);
+}
+
+// ── FT Firstrade ──
+function parseFT(file) {
+  Papa.parse(file, { header:true, skipEmptyLines:true, complete(res) {
+    const raw = [];
+    for (const r of res.data) {
+      const action = (r['Action']||'').trim().toUpperCase();
+      const sym = (r['Symbol']||'').trim();
+      if (!sym) continue;
+      const qty = Math.abs(parseFloat(r['Quantity'])||0);
+      const price = parseFloat(r['Price'])||0;
+      const amount = Math.abs(parseFloat(r['Amount'])||0);
+      const fee = (parseFloat(r['Commission'])||0) + (parseFloat(r['Fee'])||0);
+      const date = r['TradeDate']||'';
+      const recType = (r['RecordType']||'').trim().toUpperCase();
+      // 股利（Firstrade RecordType=DIVIDEND 或 Action 含 DIVIDEND）
+      if (recType === 'DIVIDEND' || action.includes('DIVIDEND') || action.includes('DIV')) {
+        raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+          side:'DIVIDEND', qty:0, price:0, amount, fee,
+          market:'US', broker:'FT', isOption:false, note:action });
+        continue;
+      }
+      if (!['BUY','SELL'].includes(action)) continue;
+      raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+        side:action==='BUY'?'BUY':'SELL', qty, price, amount, fee,
+        market:'US', broker:'FT', isOption:false });
+    }
+    mergeNewTrades(raw, file.name, 'FT');
+    setImportDone('ft', file.name);
+  }});
+}
+
+// ── Schwab 嘉信 ──
+function parseSchwab(file) {
+  Papa.parse(file, { header:true, skipEmptyLines:true, complete(res) {
+    const BUY  = new Set(['Buy','Buy to Open','Buy to Close','Reinvest Shares']);
+    const SELL = new Set(['Sell','Sell to Open','Sell to Close','Expired','Exchange or Exercise']);
+    const DIV  = new Set(['Cash Dividend','Qualified Dividend','Non-Qualified Div','Pr Yr Cash Div']);
+    const raw = [];
+    for (const r of res.data) {
+      const action = (r['Action']||'').trim();
+      const isBuy  = BUY.has(action), isSell = SELL.has(action);
+      const isDiv  = DIV.has(action);
+      const isReinvest = action === 'Reinvest Shares';
+      if (!isBuy && !isSell && !isDiv) continue;
+      const sym = (r['Symbol']||'').trim();
+      if (!sym) continue;
+      const isOpt = sym.split(' ').length > 1;
+      const qty = Math.abs(parseFloat(r['Quantity'])||0);
+      const price = parseFloat((r['Price']||'').replace(/[$,]/g,''))||0;
+      const fee = parseFloat((r['Fees & Comm']||'').replace(/[$,]/g,''))||0;
+      const amount = Math.abs(parseFloat((r['Amount']||'').replace(/[$,]/g,''))||0);
+      const dp = (r['Date']||'').split('/');
+      const date = dp.length===3 ? `${dp[2]}-${dp[0].padStart(2,'0')}-${dp[1].padStart(2,'0')}` : r['Date'];
+      if (isDiv) {
+        // 股利 → 現金入帳
+        raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+          side:'DIVIDEND', qty:0, price:0, amount, fee,
+          market:'US', broker:'Schwab', isOption:false, note:action });
+      } else if (isReinvest) {
+        // 再投入 → 股利入帳 + 買入（淨現金影響為零）
+        raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+          side:'DIVIDEND', qty:0, price:0, amount, fee:0,
+          market:'US', broker:'Schwab', isOption:false, note:'Reinvest(配息)' });
+        raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+          side:'BUY', qty, price, amount, fee,
+          market:isOpt?'OPT':'US', broker:'Schwab', isOption:isOpt, note:'Reinvest(買入)' });
+      } else {
+        raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+          side:isBuy?'BUY':'SELL', qty, price, amount, fee,
+          market:isOpt?'OPT':'US', broker:'Schwab', isOption:isOpt });
+      }
+    }
+    mergeNewTrades(raw, file.name, 'Schwab');
+    setImportDone('schwab', file.name);
+  }});
+}
+
+// ── 永豐金 ──
+function parseSinopac(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type:'array', cellDates:false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+    let startRow = 0;
+    for (let i=0;i<rows.length;i++) { if (rows[i].includes('成交日')) { startRow=i; break; } }
+    const h = rows[startRow];
+    const fi = k => h.indexOf(k);
+    const [iDate,iItem,iSide,iQty,iPrice,iFee,iTax] = ['成交日','商品','買賣','數量','成交價','手續費','交易稅'].map(fi);
+    const raw = [];
+    for (let i=startRow+1; i<rows.length; i++) {
+      const r = rows[i];
+      const dateRaw = r[iDate];
+      if (!dateRaw || String(dateRaw).startsWith('合計')) continue;
+      const date = String(dateRaw).replace(/\//g,'-');
+      const item = String(r[iItem]||'').trim(); if (!item) continue;
+      const parts = item.split(' ');
+      const sym  = parts[0], name = parts.slice(1).join(' ');
+      const sideRaw = String(r[iSide]||'');
+      const isBuy = sideRaw.includes('買'), isSell = sideRaw.includes('賣');
+      if (!isBuy && !isSell) continue;
+      const qty   = Math.abs(parseFloat(String(r[iQty]||'').replace(/,/g,''))||0);
+      const price = parseFloat(r[iPrice])||0;
+      const fee   = (parseFloat(String(r[iFee]||'').replace(/,/g,''))||0)
+                  + (parseFloat(String(r[iTax]||'').replace(/,/g,''))||0);
+      const amount = qty * price;
+      raw.push({ date, symbol:sym, name,
+        side:isBuy?'BUY':'SELL', qty, price, amount, fee,
+        market:'TW', broker:'永豐', isOption:false });
+    }
+    mergeNewTrades(raw, file.name, '永豐');
+    setImportDone('sinopac', file.name);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ══════════════════════════════════════════════════
+// MERGE NEW TRADES INTO PERSISTENT STORE
+// ══════════════════════════════════════════════════
+function tradeId(t) {
+  const sym = (t.symbol||'').replace(/\xa0/g,'').trim();
+  // 加入 amount 以區分同日同標的不同金額的股利
+  return `${t.date}|${sym}|${t.side}|${t.qty}|${t.amount||0}|${t.broker}`;
+}
+
+function mergeNewTrades(rawTrades, filename, broker) {
+  // 標準化所有 symbol（去除   等不可見字元）
+  rawTrades = rawTrades.map(t => ({ ...t, symbol: (t.symbol||'').replace(/\xa0/g,'').trim() }));
+  const existingIds = new Set(trades.map(tradeId));
+  const newTrades = rawTrades.filter(t => !existingIds.has(tradeId(t)));
+  const skipped = rawTrades.length - newTrades.length;
+
+  addLog(`[${broker}] ${filename}：解析 ${rawTrades.length} 筆，新增 ${newTrades.length} 筆，跳過重複 ${skipped} 筆`, newTrades.length > 0 ? 'ok' : 'warn');
+
+  if (newTrades.length === 0) {
+    renderDashboard(); return;
+  }
+
+  // append to persistent trades
+  trades = [...trades, ...newTrades];
+  save(KEYS.trades, trades);
+
+  // ── 現金帳戶連動 ──
+  settleCashForTrades(newTrades);
+
+  // rebuild inventory & realized from ALL trades
+  rebuildFromTrades();
+}
+
+// ══════════════════════════════════════════════════
+// CASH SETTLEMENT — 交易交割連動現金帳戶
+// ══════════════════════════════════════════════════
+function findCashAccount(brokerName) {
+  const accountName = brokerMap[brokerName];
+  if (!accountName) return null;
+  return cashAccounts.find(a => a.account === accountName) || null;
+}
+
+function addCashLogEntry(date, accountName, currency, amount, type, desc) {
+  cashLog.push({ date, account: accountName, currency, amount, type, desc, ts: Date.now() });
+  if (cashLog.length > 500) cashLog.length = 500;
+  save(KEYS.cashLog, cashLog);
+}
+
+function settleCashForTrades(newTrades) {
+  let settled = 0;
+  for (const t of newTrades) {
+    const acc = findCashAccount(t.broker);
+    if (!acc) continue;
+
+    if (t.side === 'BUY') {
+      const debit = (t.amount || 0) + (t.fee || 0);
+      acc.amount -= debit;
+      acc.updatedAt = t.date;
+      addCashLogEntry(t.date, acc.account, acc.currency, -debit, '交割扣款',
+        `買入 ${t.symbol} ${t.qty}股 @${t.price} 手續費${t.fee||0}`);
+      settled++;
+    } else if (t.side === 'SELL') {
+      const credit = (t.amount || 0) - (t.fee || 0);
+      acc.amount += credit;
+      acc.updatedAt = t.date;
+      addCashLogEntry(t.date, acc.account, acc.currency, credit, '交割入帳',
+        `賣出 ${t.symbol} ${t.qty}股 @${t.price} 手續費${t.fee||0}`);
+      settled++;
+    } else if (t.side === 'DIVIDEND') {
+      const credit = (t.amount || 0) - (t.fee || 0);
+      acc.amount += credit;
+      acc.updatedAt = t.date;
+      addCashLogEntry(t.date, acc.account, acc.currency, credit, '股利入帳',
+        `${t.symbol} 股利 ${t.amount} 扣稅${t.fee||0}`);
+      settled++;
+    }
+  }
+  if (settled > 0) {
+    save(KEYS.cash, cashAccounts);
+    addLog(`現金連動：${settled} 筆交割已更新對應帳戶`, 'ok');
+  }
+}
+
+// ══════════════════════════════════════════════════
+// REBUILD INVENTORY FROM SCRATCH
+// (inventory也包含手動基準，需要先保留basis entries)
+// ══════════════════════════════════════════════════
+function rebuildFromTrades() {
+  // ── 設計原則 ──
+  // basis (KEYS.basis): 純粹的基準持倉，由庫存報表/手動輸入建立，永遠保留
+  // inventory: basis + 交易紀錄疊加後的最終持倉，每次從頭重算
+  // 同標的：basis 作為最早的 lot，後續交易再疊加
+
+  const basis = load(KEYS.basis) || {};   // 永久基準，不被覆蓋
+  const lots = {};       // symbol → [{qty, costPerUnit, fee, date}]
+  const newInventory = {};
+  const newRealized = [];
+
+  // Step1：把 basis 當作最早的 synthetic BUY lot
+  for (const [s, b] of Object.entries(basis)) {
+    lots[s] = [{ qty: b.qty, costPerUnit: b.avgCost, fee: 0, date: b.basisDate || '2000-01-01', isBasis: true }];
+  }
+
+  // Step2：把所有交易依日期疊加
+  const sorted = [...trades].sort((a, b) => a.date.localeCompare(b.date));
+  for (const t of sorted) {
+    // 股利不影響持倉（只影響現金）
+    if (t.side === 'DIVIDEND') continue;
+    const sym = t.symbol;
+    if (!lots[sym]) lots[sym] = [];
+
+    if (t.side === 'BUY') {
+      const costPerUnit = t.amount / (t.qty || 1);
+      if (t.market === 'TW') {
+        // 台股加權平均：合成單一 lot
+        const allLots = lots[sym];
+        const prevQty  = allLots.reduce((s, l) => s + l.qty, 0);
+        const prevCost = allLots.reduce((s, l) => s + l.qty * l.costPerUnit + l.fee, 0);
+        const newQty   = prevQty + t.qty;
+        const newCost  = prevCost + t.amount + t.fee;
+        lots[sym] = [{ qty: newQty, costPerUnit: newQty > 0 ? newCost / newQty : costPerUnit, fee: 0, date: t.date, isBasis: false }];
+      } else {
+        lots[sym].push({ qty: t.qty, costPerUnit, fee: t.fee, date: t.date, isBasis: false });
+      }
+    } else { // SELL
+      let remaining = t.qty;
+      let totalCost = 0;
+      while (remaining > 0.0001 && lots[sym] && lots[sym].length > 0) {
+        const lot = lots[sym][0];
+        const consume = Math.min(remaining, lot.qty);
+        const feeShare = lot.qty > 0 ? (consume / lot.qty) * lot.fee : 0;
+        totalCost += consume * lot.costPerUnit + feeShare;
+        lot.qty   -= consume;
+        lot.fee   -= feeShare;
+        remaining -= consume;
+        if (lot.qty < 0.0001) lots[sym].shift();
+      }
+      const proceeds = t.amount - t.fee;
+      const pnl = proceeds - totalCost;
+      newRealized.push({
+        symbol: sym, name: t.name, market: t.market,
+        broker: t.broker, sellDate: t.date, qty: t.qty,
+        cost: totalCost, proceeds, pnl,
+        pct: totalCost > 0 ? pnl / totalCost : 0,
+        isOption: t.isOption
+      });
+    }
+  }
+
+  // Step3：把剩餘 lots 組成 inventory
+  const allSymbols = new Set([...Object.keys(basis), ...Object.keys(lots)]);
+  for (const sym of allSymbols) {
+    const symLots = (lots[sym] || []).filter(l => l.qty > 0.0001);
+    const b = basis[sym];
+    const meta = trades.filter(t => t.symbol === sym).pop() || {};
+
+    if (symLots.length === 0) continue;  // 全部賣光，不加入持倉
+
+    const totalQty  = symLots.reduce((s, l) => s + l.qty, 0);
+    const totalCost = symLots.reduce((s, l) => s + l.qty * l.costPerUnit + l.fee, 0);
+    const avgCost   = totalQty > 0 ? totalCost / totalQty : 0;
+    const market    = b?.market || meta.market || 'US';
+
+    newInventory[sym] = {
+      qty: totalQty, avgCost, totalCost,
+      name: b?.name || meta.name || sym,
+      market,
+      broker: b?.broker || meta.broker || '',
+      isOption: b?.isOption || meta.isOption || false,
+      isBasis: !!b,    // 有 basis 就標記
+      basisDate: b?.basisDate || '',
+      costMethod: (market === 'TW' || market === 'ESB') ? 'WAC' : 'FIFO'  // JP uses FIFO like US
+    };
+  }
+
+  inventory = newInventory;
+  realized  = newRealized;
+  save(KEYS.inventory, inventory);
+  save(KEYS.realized, realized);
+  renderDashboard();
+  updateStorageInfo();
+}
+
+function addBasis() {
+  const sym  = (document.getElementById('b-sym').value || '').replace(/\xa0/g,'').trim().toUpperCase();
+  const name = document.getElementById('b-name').value.trim();
+  const mkt  = document.getElementById('b-market').value;
+  const qty  = parseFloat(document.getElementById('b-qty').value) || 0;
+  const cost = parseFloat(document.getElementById('b-cost').value) || 0;
+  const date = document.getElementById('b-date').value || new Date().toISOString().slice(0,10);
+
+  if (!sym || qty <= 0 || cost <= 0) {
+    alert('請填寫代碼、持倉量、均價'); return;
+  }
+
+  // 呼叫統一的合併函數（加權平均，不覆蓋）
+  mergeBasisItems([{
+    symbol: sym, name: name || sym,
+    qty, avgCost: cost, market: mkt,
+    isOption: false, basisDate: date
+  }], '手動');
+
+  // 覆寫 basisDate（mergeBasisItems 用 getBasisDate()，手動新增要用表單的日期）
+  const basis = load(KEYS.basis) || {};
+  if (basis[sym]) { basis[sym].basisDate = date; save(KEYS.basis, basis); }
+
+  // clear form
+  ['b-sym','b-name','b-qty','b-cost'].forEach(id => document.getElementById(id).value='');
+}
+
+function deleteBasis(sym) {
+  if (!confirm(`刪除 ${sym} 的基準持倉？`)) return;
+  const basis = load(KEYS.basis) || {};
+  delete basis[sym];
+  save(KEYS.basis, basis);
+  rebuildFromTrades();
+  renderBasis();
+}
+
+function renderBasis() {
+  const tbody = document.getElementById('basis-tbody');
+  tbody.innerHTML = '';
+  const basisStore = load(KEYS.basis) || {};
+  const items = Object.entries(basisStore);
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">尚未設定基準持倉</td></tr>';
+    return;
+  }
+  for (const [sym,h] of items) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="sym">${sym}</td><td style="color:var(--muted)">${h.name}</td>
+      <td>${marketTag(h.market)}</td>
+      <td>${h.qty.toFixed(h.qty%1===0?0:4)}</td>
+      <td>${fmtPrice(h.avgCost,h.market)}</td>
+      <td><span class="tag tag-basis">${h.costMethod}</span></td>
+      <td style="color:var(--muted)">${h.basisDate||'—'}</td>
+      <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="deleteBasis('${sym}')">刪除</button></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ══════════════════════════════════════════════════
+// PRICE FETCHING — via Google Apps Script Web App
+// ══════════════════════════════════════════════════
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+function setPriceStatus(msg, color='var(--gold)') {
+  ['price-status','price-status-h'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = msg; el.style.color = color; }
+  });
+  ['btn-refresh','btn-refresh-h'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = (color === 'var(--gold)');
+  });
+}
+
+// 清理 symbol key（移除不可見字元）
+function cleanSym(s) { return (s||'').replace(/[\xa0\u200b\s]+/g,'').toUpperCase().trim(); }
+
+// ── Google Apps Script Web App URL ──
+// 設定完成後把你的 Web App URL 貼在這裡
+let GAS_URL = load('ptv2_gas_url') || '';
+
+function saveGasUrl(url) {
+  GAS_URL = url.trim();
+  save('ptv2_gas_url', GAS_URL);
+}
+
+async function fetchWithTimeout(url, opts={}, ms=10000) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    clearTimeout(tid);
+    return r;
+  } catch(e) { clearTimeout(tid); throw e; }
+}
+
+async function refreshPrices() {
+  if (!GAS_URL) {
+    // 沒設定 GAS URL → 顯示設定對話框
+    showGasSetup();
+    return;
+  }
+  setPriceStatus('從 Google Sheets 抓取報價… (首次可能需 20-30 秒)', 'var(--gold)');
+
+  // 收集所有需要報價的標的（美股用原始代碼，台股加 .TW 後綴）
+  const allSyms = Object.keys(inventory).map(cleanSym).filter(Boolean);
+  const twSyms  = [...new Set(allSyms.filter(s => inventory[Object.keys(inventory).find(k=>cleanSym(k)===s)]?.market === 'TW'))];
+  const usSyms  = [...new Set(allSyms.filter(s => {
+    const h = inventory[Object.keys(inventory).find(k=>cleanSym(k)===s)];
+    return h && h.market !== 'TW' && h.market !== 'ESB' && h.market !== 'JP';
+  }))];
+
+  // 取興櫃 symbol
+  const esbSyms = [...new Set(Object.keys(inventory)
+    .map(s => cleanSym(s))
+    .filter(s => {
+      const h = inventory[Object.keys(inventory).find(k => cleanSym(k) === s)];
+      return h && h.market === 'ESB';
+    }))];
+
+  // 取日股 symbol
+  const jpSyms = [...new Set(Object.keys(inventory)
+    .map(s => cleanSym(s))
+    .filter(s => {
+      const h = inventory[Object.keys(inventory).find(k => cleanSym(k) === s)];
+      return h && h.market === 'JP';
+    }))];
+
+  // Google Finance 格式：
+  //   美股 → "AAPL"
+  //   台股上市 → "TPE:2330"
+  //   台股上櫃 → "GTSM:3661"（TPEX 上櫃用 GTSM）
+  //   興櫃 → "ESB:7892"（GAS 端用 TPEX API 處理）
+  //   日股 → "TYO:2644"（東京證交所，GAS 端用 GOOGLEFINANCE + Yahoo JP 備援）
+  // 收集現金帳戶中所有非 TWD 幣別，用於自動抓匯率
+  const fxCurrencies = [...new Set(cashAccounts.map(a => a.currency).filter(c => c !== 'TWD'))];
+
+  const gasSymbols = [
+    ...usSyms,
+    ...twSyms.map(s => `TPE:${s}`),
+    ...esbSyms.map(s => `ESB:${s}`),
+    ...jpSyms.map(s => `TYO:${s}`)
+  ];
+
+  // 附加匯率請求參數
+  const fxParam = fxCurrencies.length > 0 ? '&fx=' + encodeURIComponent(fxCurrencies.join(',')) : '';
+
+  if (gasSymbols.length === 0) {
+    setPriceStatus('無持倉資料', 'var(--muted)');
+    return;
+  }
+
+  try {
+    // 呼叫 GAS Web App，傳入所有標的
+    const url = `${GAS_URL}?symbols=${encodeURIComponent(gasSymbols.join(','))}${fxParam}`;
+    const r = await fetchWithTimeout(url, { mode: 'cors' }, 60000);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+
+    if (data.error) throw new Error(data.error);
+
+    let fetched = 0;
+    // 處理回傳的報價
+    for (const [sym, price] of Object.entries(data.prices || {})) {
+      if (!price || price <= 0) continue;
+      if (sym.startsWith('TPE:')) {
+        prices[sym.replace('TPE:', '')] = price;
+      } else if (sym.startsWith('GTSM:')) {
+        prices[sym.replace('GTSM:', '')] = price;
+      } else if (sym.startsWith('ESB:')) {
+        // 興櫃：去掉 ESB: 前綴
+        prices[sym.replace('ESB:', '')] = price;
+      } else if (sym.startsWith('TYO:')) {
+        // 日股：去掉 TYO: 前綴
+        prices[sym.replace('TYO:', '')] = price;
+      } else {
+        prices[sym] = price;
+      }
+      fetched++;
+    }
+
+    // 匯率同步：GAS 回傳所有請求的幣別匯率
+    let fxUpdated = 0;
+    const fxRates = data.fx_rates || {};
+    // 向下相容：如果舊版 GAS 只回傳 fx_usd_twd
+    if (!fxRates['USD'] && data.fx_usd_twd > 0) fxRates['USD'] = data.fx_usd_twd;
+    for (const [cur, rate] of Object.entries(fxRates)) {
+      if (!rate || rate <= 0) continue;
+      if (cur === 'USD') { fxRate = rate; save(KEYS.fx, fxRate); }
+      if (cashFxRates[cur] !== rate) {
+        cashFxRates[cur] = rate;
+        cashAccounts.filter(a => a.currency === cur).forEach(a => a.fxToTWD = rate);
+        fxUpdated++;
+      }
+    }
+    if (fxUpdated > 0) {
+      save(KEYS.cashFx, cashFxRates);
+      save(KEYS.cash, cashAccounts);
+    }
+    document.getElementById('s-fx').textContent = fxRate.toFixed(2);
+
+    const ts = new Date().toLocaleTimeString('zh-TW');
+    const fxMsg = fxUpdated > 0 ? ` · ${fxUpdated}組匯率` : '';
+    setPriceStatus(`已更新 ${ts}（${fetched}/${gasSymbols.length} 筆${fxMsg}）`, 'var(--green)');
+    save(KEYS.prices, prices);
+    renderDashboard();
+    renderHoldings();
+
+  } catch(e) {
+    const msg = e.name === 'AbortError' ? '請求逾時（GAS 冷啟動需 20-30 秒，請再試一次）' : e.message;
+    setPriceStatus(`抓取失敗：${msg}`, 'var(--red)');
+    console.error('GAS fetch error:', e);
+    // 顯示診斷提示
+    ['price-status','price-status-h'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.title = `完整錯誤：${e.toString()}\n\n請點「設定報價來源」→「測試 URL」查看 GAS 回應`;
+    });
+  }
+}
+
+// ── GAS 設定對話框 ──
+function showGasSetup() {
+  const modal = document.getElementById('modal-overlay');
+  const body  = document.getElementById('modal-body');
+  const savedUrl = load('ptv2_gas_url') || '';
+  body.innerHTML = `
+    <div class="modal-title">設定 Google Apps Script 報價來源</div>
+    <div class="modal-sub">
+      請依照以下步驟建立你的免費報價 API，只需設定一次。
+    </div>
+    <div style="background:var(--bg3);border-radius:8px;padding:16px;font-size:11px;line-height:2.2;margin-bottom:16px;border:1px solid var(--border)">
+      <strong style="color:var(--green);font-size:12px">步驟一：建立 Google Sheet</strong><br>
+      前往 <a href="https://sheets.new" target="_blank" style="color:var(--blue)">sheets.new</a> 建立新試算表，命名為「報價來源」<br><br>
+      <strong style="color:var(--green);font-size:12px">步驟二：開啟 Apps Script</strong><br>
+      點選選單 <code style="background:var(--bg4);padding:1px 5px;border-radius:3px">延伸功能 → Apps Script</code>，刪除原有內容<br><br>
+      <strong style="color:var(--green);font-size:12px">步驟三：貼上程式碼</strong><br>
+      將下方程式碼完整複製貼上，然後點 <code style="background:var(--bg4);padding:1px 5px;border-radius:3px">儲存</code><br><br>
+      <strong style="color:var(--green);font-size:12px">步驟四：部署為 Web App</strong><br>
+      點 <code style="background:var(--bg4);padding:1px 5px;border-radius:3px">部署 → 新增部署</code> → 類型選「網頁應用程式」<br>
+      「以誰的身分執行」選<strong>我</strong>，「誰可以存取」選<strong>任何人</strong> → 點「部署」<br>
+      複製產生的 <strong style="color:var(--gold)">網頁應用程式 URL</strong><br><br>
+      <strong style="color:var(--green);font-size:12px">步驟五：貼上 URL</strong><br>
+      把 URL 貼到下方欄位，點「儲存」
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Apps Script Web App URL</label>
+      <input id="gas-url-input" type="text" value="${savedUrl}"
+        placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px">
+    </div>
+    <div style="background:var(--bg3);border-radius:8px;padding:14px;margin-bottom:16px;border:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">複製此 Apps Script 程式碼：</div>
+      <pre id="gas-code" style="font-size:10px;color:var(--text);overflow-x:auto;line-height:1.7;white-space:pre-wrap;margin:0">${getGasCode()}</pre>
+    </div>
+    <div class="flex" style="gap:10px">
+      <button class="btn btn-green" onclick="confirmGasUrl()">儲存並更新報價</button>
+      <button class="btn" onclick="testGasUrl()">🔍 測試 URL（開新分頁）</button>
+      <button class="btn" onclick="copyGasCode()">複製程式碼</button>
+      <button class="btn" onclick="closeModal()">取消</button>
+    </div>
+  `;
+  modal.classList.add('open');
+}
+
+function getGasCode() {
+  return `// Portfolio Tracker 報價 API v5
+// 部署：延伸功能 → Apps Script → 貼上全部 → 儲存 → 部署為網頁應用程式（任何人）
+
+function testFetch() {
+  const result = doGet({ parameter: { symbols: 'AAPL,TPE:2330,TYO:2644,ESB:7892' } });
+  Logger.log(result.getContent());
+}
+
+function testSyncLoad() {
+  const result = doGet({ parameter: { action: 'load' } });
+  Logger.log(result.getContent());
+}
+
+function doGet(e) {
+  try {
+    // 同步功能：action=load 時讀取雲端備份
+    if (e.parameter.action === 'load') return handleSyncLoad();
+
+    const symbolsParam = (e.parameter.symbols || '').trim();
+    if (!symbolsParam) return jsonOut({ error: 'no symbols' });
+
+    const symbols       = symbolsParam.split(',').map(s => s.trim()).filter(Boolean);
+    const prices        = {};
+    const emergingCodes = [];
+    const financeSyms   = [];
+
+    const jpCodes = [];
+    symbols.forEach(sym => {
+      if (sym.startsWith('ESB:')) emergingCodes.push(sym.replace('ESB:', ''));
+      else if (sym.startsWith('TYO:')) { financeSyms.push(sym); jpCodes.push(sym.replace('TYO:', '')); }
+      else financeSyms.push(sym);
+    });
+
+    // ── 1. GOOGLEFINANCE 批次（美股 + 台股上市 TPE:） ──
+    var fxVal = 0;
+    var fxResults = {};
+    if (financeSyms.length > 0) {
+      const ss    = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheets()[0];
+      const n     = financeSyms.length;
+      const rows  = financeSyms.map(sym => [
+        sym,
+        \`=IFERROR(GOOGLEFINANCE("\${sym}","closeyest"),"")\`,
+        \`=IFERROR(GOOGLEFINANCE("\${sym}","price"),"")\`
+      ]);
+      sheet.getRange(1, 1, rows.length, 3).clearContent();
+      sheet.getRange(1, 1, rows.length, 3).setValues(rows);
+      SpreadsheetApp.flush();
+      Utilities.sleep(4000);
+      for (let i = 0; i < n; i++) {
+        const cy  = parseFloat(sheet.getRange(i + 1, 2).getValue());
+        const cur = parseFloat(sheet.getRange(i + 1, 3).getValue());
+        const val = cy > 0 ? cy : cur > 0 ? cur : 0;
+        if (val > 0) prices[financeSyms[i]] = val;
+      }
+      sheet.getRange(1, 1, rows.length, 3).clearContent();
+    }
+
+    // ── 1b. 匯率抓取（獨立於股票報價，確保即使無持倉也能更新匯率）──
+    {
+      const fxParamStr = (e.parameter.fx || 'USD').split(',').map(s => s.trim()).filter(Boolean);
+      const fxCurrencies = [...new Set(['USD', ...fxParamStr])];
+      const ss2 = SpreadsheetApp.getActiveSpreadsheet();
+      const sh2 = ss2.getSheets()[0];
+      const fxRows = fxCurrencies.map(cur => [
+        \`__FX_\${cur}__\`,
+        \`=IFERROR(GOOGLEFINANCE("CURRENCY:\${cur}TWD","price"),"")\`,
+        ''
+      ]);
+      sh2.getRange(1, 1, fxRows.length, 3).clearContent();
+      sh2.getRange(1, 1, fxRows.length, 3).setValues(fxRows);
+      SpreadsheetApp.flush();
+      Utilities.sleep(2000);
+      for (let fi = 0; fi < fxCurrencies.length; fi++) {
+        const fxv = parseFloat(sh2.getRange(fi + 1, 2).getValue()) || 0;
+        if (fxv > 0) fxResults[fxCurrencies[fi]] = fxv;
+      }
+      fxVal = fxResults['USD'] || fxVal;
+      sh2.getRange(1, 1, fxRows.length, 3).clearContent();
+    }
+
+    // ── 2. 興櫃：Yahoo 奇摩股市爬蟲 ──
+    // Yahoo 頁面內嵌 window.YAHOO.Finance.quoteSummary JSON，裡面有 regularMarketPrice
+    // 這個 JSON 片段比 HTML 結構穩定，regex 抓取不易因改版而失效
+    if (emergingCodes.length > 0) {
+      emergingCodes.forEach(code => {
+        var found = false;
+
+        // 策略A：Yahoo 奇摩台股頁面（興櫃用 .TWO 後綴）
+        const suffixes = ['.TWO', '.TW'];  // 興櫃優先試 .TWO，失敗再試 .TW
+        for (const suffix of suffixes) {
+          if (found) break;
+          try {
+            const url = \`https://tw.stock.yahoo.com/quote/\${code}\${suffix}\`;
+            const resp = UrlFetchApp.fetch(url, {
+              muteHttpExceptions: true,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120',
+                'Accept-Language': 'zh-TW,zh;q=0.9',
+                'Accept': 'text/html,application/xhtml+xml'
+              },
+              followRedirects: true
+            });
+
+            if (resp.getResponseCode() !== 200) continue;
+            const html = resp.getContentText('UTF-8');
+
+            // 方法1：抓 root.App.main 的 JSON（最穩定）
+            const patterns = [
+              /"regularMarketPrice"\s*:\s*\{[^}]*"raw"\s*:\s*([\d.]+)/,
+              /"regularMarketPrice"\s*:\s*([\d.]+)/,
+              /"currentPrice"\s*:\s*([\d.]+)/,
+              /"price"\s*:\s*\{"raw"\s*:\s*([\d.]+)/,
+              // 興櫃特有：最後成交價
+              /"lastPrice"\s*:\s*([\d.]+)/,
+              // Yahoo 新版 JSON 結構
+              /data-field="regularMarketPrice"[^>]*data-value="([\d.]+)"/,
+              /"close"\s*:\s*([\d.]+)/
+            ];
+
+            for (const pat of patterns) {
+              const m = html.match(pat);
+              if (m) {
+                const p = parseFloat(m[1]);
+                if (!isNaN(p) && p > 0) {
+                  prices[\`ESB:\${code}\`] = p;
+                  found = true;
+                  break;
+                }
+              }
+            }
+          } catch(ex) {}
+        }
+
+        // 策略B：Yahoo Finance API（英文版，有時興櫃也有資料）
+        if (!found) {
+          try {
+            const apiUrl = \`https://query1.finance.yahoo.com/v8/finance/chart/\${code}.TWO?interval=1d&range=5d\`;
+            const resp2 = UrlFetchApp.fetch(apiUrl, {
+              muteHttpExceptions: true,
+              headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            if (resp2.getResponseCode() === 200) {
+              const d2 = JSON.parse(resp2.getContentText());
+              const meta = d2?.chart?.result?.[0]?.meta;
+              const p2 = meta?.regularMarketPrice || meta?.chartPreviousClose;
+              if (p2 && p2 > 0) { prices[\`ESB:\${code}\`] = p2; found = true; }
+            }
+          } catch(ex2) {}
+        }
+
+        // 策略C：TWSE 看看有沒有（少數興櫃申請轉上市過渡期間）
+        if (!found) {
+          try {
+            const twseUrl = \`https://query2.finance.yahoo.com/v8/finance/chart/\${code}.TW?interval=1d&range=5d\`;
+            const resp3 = UrlFetchApp.fetch(twseUrl, { muteHttpExceptions: true, headers: {'User-Agent':'Mozilla/5.0'} });
+            if (resp3.getResponseCode() === 200) {
+              const d3 = JSON.parse(resp3.getContentText());
+              const meta3 = d3?.chart?.result?.[0]?.meta;
+              const p3 = meta3?.regularMarketPrice || meta3?.chartPreviousClose;
+              if (p3 && p3 > 0) { prices[\`ESB:\${code}\`] = p3; found = true; }
+            }
+          } catch(ex3) {}
+        }
+      });
+    }
+
+    // ── 3. 日股 Yahoo Finance 備援（GOOGLEFINANCE 抓不到時） ──
+    if (jpCodes.length > 0) {
+      jpCodes.forEach(code => {
+        if (prices[\`TYO:\${code}\`]) return; // GOOGLEFINANCE 已抓到
+        try {
+          const apiUrl = \`https://query1.finance.yahoo.com/v8/finance/chart/\${code}.T?interval=1d&range=5d\`;
+          const resp = UrlFetchApp.fetch(apiUrl, {
+            muteHttpExceptions: true,
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+          });
+          if (resp.getResponseCode() === 200) {
+            const d = JSON.parse(resp.getContentText());
+            const meta = d?.chart?.result?.[0]?.meta;
+            const p = meta?.regularMarketPrice || meta?.chartPreviousClose;
+            if (p && p > 0) prices[\`TYO:\${code}\`] = p;
+          }
+        } catch(ex) {}
+      });
+    }
+
+    return jsonOut({ prices, fx_usd_twd: fxVal, fx_rates: fxResults || {}, count: Object.keys(prices).length });
+
+  } catch(err) {
+    return jsonOut({ error: err.toString(), prices: {}, fx_usd_twd: 0 });
+  }
+}
+
+function jsonOut(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ══════════════════════════════════════════════════
+// 雲端同步：doPost 儲存 / doGet?action=load 讀取
+// 資料存在同一試算表的 "SyncData" 工作表
+// ══════════════════════════════════════════════════
+function doPost(e) {
+  try {
+    // 支援兩種格式：JSON body 或 form payload 參數
+    var body;
+    if (e.postData && e.postData.contents) {
+      body = JSON.parse(e.postData.contents);
+    } else if (e.parameter && e.parameter.payload) {
+      body = JSON.parse(e.parameter.payload);
+    } else {
+      return jsonOut({ error: 'no data' });
+    }
+    if (body.action === 'save' && body.data) {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      let sheet = ss.getSheetByName('SyncData');
+      if (!sheet) sheet = ss.insertSheet('SyncData');
+      sheet.clear();
+      sheet.getRange(1, 1).setValue(new Date().toISOString());
+      sheet.getRange(2, 1).setValue(JSON.stringify(body.data));
+      return jsonOut({ ok: true, ts: new Date().toISOString(), size: JSON.stringify(body.data).length });
+    }
+    return jsonOut({ error: 'unknown action' });
+  } catch(err) {
+    return jsonOut({ error: err.toString() });
+  }
+}
+
+// doGet 擴充：action=load 時讀取同步資料
+// （原有的報價功能不受影響，只有帶 action=load 才走同步邏輯）
+function handleSyncLoad() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('SyncData');
+    if (!sheet) return jsonOut({ error: 'no_sync_data', msg: '尚未上傳過同步資料' });
+    const ts = sheet.getRange(1, 1).getValue();
+    const raw = sheet.getRange(2, 1).getValue();
+    if (!raw) return jsonOut({ error: 'empty', msg: '同步資料為空' });
+    const data = JSON.parse(raw);
+    return jsonOut({ ok: true, ts: ts, data: data });
+  } catch(err) {
+    return jsonOut({ error: err.toString() });
+  }
+}`;
+}
+
+function copyGasCode() {
+  const code = document.getElementById('gas-code')?.textContent || getGasCode();
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = event.target;
+    btn.textContent = '✓ 已複製';
+    setTimeout(() => { btn.textContent = '複製程式碼'; }, 2000);
+  });
+}
+
+function confirmGasUrl() {
+  const url = document.getElementById('gas-url-input')?.value?.trim();
+  if (!url || !url.startsWith('https://script.google.com')) {
+    alert('請輸入正確的 Google Apps Script URL（以 https://script.google.com 開頭）');
+    return;
+  }
+  saveGasUrl(url);
+  closeModal();
+  refreshPrices();
+}
+
+function testGasUrl() {
+  const url = document.getElementById('gas-url-input')?.value?.trim();
+  if (!url) { alert('請先輸入 URL'); return; }
+  // 用 AAPL + TPE:2330 做測試，直接在新分頁看原始 JSON 回應
+  const testUrl = url + '?symbols=AAPL,TPE:2330,CURRENCY:USDTWD';
+  window.open(testUrl, '_blank');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay')?.classList.remove('open');
+}
+
+// ══════════════════════════════════════════════════
+// RENDER DASHBOARD
+// ══════════════════════════════════════════════════
+function renderDashboard() {
+  const hEntries = Object.entries(inventory);
+  if (hEntries.length===0 && trades.length===0) {
+    document.getElementById('dash-sub').textContent='尚無資料，請先匯入交易紀錄或設定基準持倉';
+    return;
+  }
+
+  let totalValueTWD=0, totalCostTWD=0, totalUnrealTWD=0;
+  const rows = hEntries.map(([sym,h]) => {
+    const p = prices[sym.replace(/\xa0/g,'').trim()] || prices[sym] || null;
+    const costTWD = toTWD(h.totalCost, h.market);
+    const valTWD  = p ? toTWD(p*h.qty, h.market) : costTWD;
+    totalCostTWD  += costTWD;
+    totalValueTWD += valTWD;
+    totalUnrealTWD += valTWD - costTWD;
+    return { sym, h, p, costTWD, valTWD, pnlTWD: valTWD-costTWD, pct:(valTWD-costTWD)/costTWD };
+  }).sort((a,b)=>b.valTWD-a.valTWD);
+
+  const totalRealTWD = realized.reduce((s,r)=>s+toTWD(r.pnl,r.market),0);
+  const unrealPct = totalCostTWD>0 ? (totalUnrealTWD/totalCostTWD*100).toFixed(2) : 0;
+
+  // 計算現金總額
+  const cashTotalTWD = cashAccounts.reduce((s,a) => s + a.amount * a.fxToTWD, 0);
+  const cashCurrCount = new Set(cashAccounts.map(a=>a.currency)).size;
+
+  setEl('s-totalval', 'NT$'+Math.round(totalValueTWD + cashTotalTWD).toLocaleString());
+  setEl('s-totalval-sub', `持倉 NT$${Math.round(totalValueTWD).toLocaleString()} + 現金 NT$${Math.round(cashTotalTWD).toLocaleString()}`);
+  setEl('s-unrealized', (totalUnrealTWD>=0?'+':'')+'NT$'+Math.round(totalUnrealTWD).toLocaleString(), totalUnrealTWD>=0?'pos':'neg');
+  setEl('s-unrealized-pct', (unrealPct>=0?'+':'')+unrealPct+'%');
+  setEl('s-realized', (totalRealTWD>=0?'+':'')+'NT$'+Math.round(totalRealTWD).toLocaleString(), totalRealTWD>=0?'pos':'neg');
+  setEl('s-cash', 'NT$'+Math.round(cashTotalTWD).toLocaleString(), 'neu');
+  document.getElementById('s-cash-sub').textContent = cashCurrCount > 0 ? `${cashCurrCount} 幣別 · ${cashAccounts.length} 帳戶` : '尚無現金';
+  setEl('s-count', hEntries.length+'', 'neu');
+
+  const twC=hEntries.filter(([,h])=>h.market==='TW').length;
+  const usC=hEntries.filter(([,h])=>h.market==='US').length;
+  const jpC=hEntries.filter(([,h])=>h.market==='JP').length;
+  const opC=hEntries.filter(([,h])=>h.market==='OPT').length;
+  document.getElementById('s-count-sub').textContent=`台股${twC}/美股${usC}/日股${jpC}/期權${opC}`;
+  document.getElementById('s-fx').textContent=fxRate.toFixed(2);
+  document.getElementById('s-fx-sub').textContent='USD/TWD';
+  document.getElementById('dash-sub').textContent=`${trades.length} 筆交易 · ${hEntries.length} 檔持倉 · 已實現 ${realized.length} 筆`;
+
+  // top 10
+  const tbody = document.getElementById('dash-top-tbody');
+  tbody.innerHTML='';
+  for (const { sym,h,p,valTWD,pnlTWD,pct } of rows.slice(0,10)) {
+    const tr=document.createElement('tr');
+    const pc=pnlTWD>=0?'pos':'neg';
+    tr.innerHTML=`<td class="sym">${sym}</td>
+      <td style="color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis">${h.name}</td>
+      <td>${marketTag(h.market)}</td>
+      <td>${fmtQty(h.qty)}</td>
+      <td>${fmtPrice(h.avgCost,h.market)}</td>
+      <td>${p?fmtPrice(p,h.market):'<span style="color:var(--muted)">—</span>'}</td>
+      <td>NT$${Math.round(valTWD).toLocaleString()}</td>
+      <td class="${pc}">${(pnlTWD>=0?'+':'')+'NT$'+Math.round(pnlTWD).toLocaleString()}</td>
+      <td class="${pc}">${(pct*100).toFixed(2)}%</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ══════════════════════════════════════════════════
+// ETF 清單 — 用於分類（可自行擴充）
+// ══════════════════════════════════════════════════
+const US_ETF = new Set([
+  'SPY','IVV','VOO','QQQ','IWM','VTI','VT','VEA','VWO','EEM','GLD','SLV','TLT','IEF','HYG','LQD',
+  'XLF','XLK','XLE','XLV','XLI','XLY','XLP','XLU','XLRE','XLB','XLC',
+  'QLD','TQQQ','SQQQ','SPXL','SPXS','SSO','SDS','UVXY','VXX',
+  'ARKK','ARKF','ARKG','ARKW','ARKQ',
+  'DIA','MDY','IJH','IJR','IWF','IWD',
+  'EFA','IEFA','VGK','VPL','MCHI','FXI',
+  'SCHB','SCHD','SCHX','SCHF','SCHE',
+  'AGG','BND','BNDX','MUB','VCIT','VCSH',
+  'SOXX','SMH','BOTZ','ROBO','SKYY','CLOU',
+  'USO','UNG','PDBC','DJP',
+]);
+const TW_ETF_PREFIX = ['00','006','0050','0051','0052','0053','0054','0055','0056'];
+function isUSETF(sym) { return US_ETF.has(sym.toUpperCase()); }
+function isTWETF(sym) {
+  // 台股ETF：代碼通常以 00 開頭（如0050,0056,00878等）
+  return /^00\d/.test(sym) || sym.startsWith('006');
+}
+// 日股ETF判定：東證ETF代碼區間
+// 1300-1399: 國內股票ETF  1400-1499: 國內債券/REIT ETF  1500-1599: 海外ETF
+// 1600-1699: 槓桿/反向ETF  2510-2569: 新設ETF  2620-2659: 新設ETF/ETN
+// 2840-2849: 數位資產ETF  Global X系列: 2630-2649等
+function isJPETF(sym) {
+  const n = parseInt(sym, 10);
+  if (isNaN(n)) return false;
+  return (n >= 1300 && n <= 1699) || (n >= 2510 && n <= 2569) ||
+         (n >= 2620 && n <= 2659) || (n >= 2840 && n <= 2849);
+}
+
+// ══════════════════════════════════════════════════
+// RENDER HOLDINGS — 分5區：美股個股/美股ETF/期權/台股個股/台股ETF
+// ══════════════════════════════════════════════════
+function renderHoldings() {
+  const allRows = Object.entries(inventory).map(([sym,h]) => {
+    const cleanSym = sym.replace(/\xa0/g,'').trim();
+    const p = prices[cleanSym] || prices[sym] || null;
+    const costTWD = toTWD(h.totalCost, h.market);
+    const valTWD  = p ? toTWD(p*h.qty, h.market) : null;
+    const pnlTWD  = valTWD !== null ? valTWD - costTWD : null;
+    const pct     = pnlTWD !== null && costTWD > 0 ? pnlTWD/costTWD : null;
+    return {sym, h, p, costTWD, valTWD, pnlTWD, pct};
+  }).sort((a,b) => (b.valTWD||b.costTWD) - (a.valTWD||a.costTWD));
+
+  // 分區
+  const usStockRows = allRows.filter(r => r.h.market==='US' && !isUSETF(r.sym));
+  const usEtfRows   = allRows.filter(r => r.h.market==='US' && isUSETF(r.sym));
+  const optRows     = allRows.filter(r => r.h.market==='OPT');
+  const twStockRows = allRows.filter(r => (r.h.market==='TW' || r.h.market==='ESB') && !isTWETF(r.sym));
+  const twEtfRows   = allRows.filter(r => (r.h.market==='TW' || r.h.market==='ESB') && isTWETF(r.sym));
+  const jpStockRows = allRows.filter(r => r.h.market==='JP' && !isJPETF(r.sym));
+  const jpEtfRows   = allRows.filter(r => r.h.market==='JP' && isJPETF(r.sym));
+
+  function pnlTd(pnlTWD, pct) {
+    if (pnlTWD === null) return ['—','—'];
+    const pc = pnlTWD>=0?'pos':'neg';
+    return [
+      `<span class="${pc}">${(pnlTWD>=0?'+':'')+'NT$'+Math.round(pnlTWD).toLocaleString()}</span>`,
+      `<span class="${pc}">${(pct*100).toFixed(2)}%</span>`
+    ];
+  }
+  function removeTd(sym) {
+    const safe = sym.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    return `<td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">移除</button></td>`;
+  }
+  function srcTd(h) {
+    const mktTag = h.market === 'ESB' ? ' <span class="tag" style="background:rgba(255,140,66,0.15);color:#ff8c42">興櫃</span>' : '';
+    return `<td style="color:var(--muted);font-size:10px">${h.broker}${mktTag}${h.isBasis?' <span class="tag tag-manual">基準</span>':''}</td>`;
+  }
+  function summaryText(rows, label) {
+    const cnt = rows.length;
+    const val = rows.reduce((s,r)=>s+(r.valTWD||r.costTWD),0);
+    const pnl = rows.reduce((s,r)=>s+(r.pnlTWD||0),0);
+    return `${cnt} ${label} · NT$${Math.round(val).toLocaleString()} · ${pnl>=0?'+':''}NT$${Math.round(pnl).toLocaleString()}`;
+  }
+
+  // 通用渲染：美股個股/ETF 共用
+  function renderUSRows(tbodyId, rows, summaryId, summaryLabel) {
+    const tb = document.getElementById(tbodyId);
+    if (!tb) return;
+    tb.innerHTML = '';
+    for (const {sym,h,p,valTWD,pnlTWD,pct} of rows) {
+      const [pnlStr,pctStr] = pnlTd(pnlTWD, pct);
+      const tr = document.createElement('tr');
+      tr.innerHTML=`<td class="sym">${sym}</td>
+        <td style="color:var(--muted);max-width:140px;overflow:hidden;text-overflow:ellipsis">${h.name}</td>
+        <td>${fmtQty(h.qty)}</td>
+        <td>${fmtPrice(h.avgCost,'US')}</td>
+        <td>${p?fmtPrice(p,'US'):`<input type="number" min="0" step="0.01" placeholder="輸入現價"
+              value="${prices[sym]||''}"
+              style="width:80px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;
+                     padding:3px 6px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px"
+              onchange="setManualPrice('${sym.replace(/'/g,"\\'")}',this.value)">`}</td>
+        <td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td>
+        <td>${pnlStr}</td><td>${pctStr}</td>
+        ${srcTd(h)}${removeTd(sym)}`;
+      tb.appendChild(tr);
+    }
+    const el = document.getElementById(summaryId);
+    if (el) el.textContent = summaryText(rows, summaryLabel);
+  }
+
+  // 通用渲染：台股個股/ETF 共用（無報價時顯示手動輸入欄）
+  function renderTWRows(tbodyId, rows, summaryId, summaryLabel) {
+    const tb = document.getElementById(tbodyId);
+    if (!tb) return;
+    tb.innerHTML = '';
+    for (const {sym,h,p,valTWD,pnlTWD,pct} of rows) {
+      const [pnlStr,pctStr] = pnlTd(pnlTWD, pct);
+      const tr = document.createElement('tr');
+      const safeSym = sym.replace(/'/g,"\\'");
+      // 無報價 → 顯示可輸入的 input
+      const priceTd = p
+        ? `<td>${fmtPrice(p,'TW')}</td>`
+        : `<td><input type="number" min="0" step="0.01" placeholder="輸入現價"
+              value="${prices[sym]||''}"
+              style="width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;
+                     padding:3px 6px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px"
+              onchange="setManualPrice('${safeSym}',this.value)"
+              title="點擊輸入 ${sym} 的現價（NT$）"></td>`;
+      tr.innerHTML=`<td class="sym">${sym}</td>
+        <td style="color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis">${h.name}</td>
+        <td>${fmtQty(h.qty)}</td>
+        <td>${fmtPrice(h.avgCost,'TW')}</td>
+        ${priceTd}
+        <td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td>
+        <td>${pnlStr}</td><td>${pctStr}</td>
+        ${srcTd(h)}${removeTd(sym)}`;
+      tb.appendChild(tr);
+    }
+    const el = document.getElementById(summaryId);
+    if (el) el.textContent = summaryText(rows, summaryLabel);
+  }
+
+  // 通用渲染：日股個股/ETF 共用
+  function renderJPRows(tbodyId, rows, summaryId, summaryLabel) {
+    const tb = document.getElementById(tbodyId);
+    if (!tb) return;
+    tb.innerHTML = '';
+    for (const {sym,h,p,valTWD,pnlTWD,pct} of rows) {
+      const [pnlStr,pctStr] = pnlTd(pnlTWD, pct);
+      const tr = document.createElement('tr');
+      const safeSym = sym.replace(/'/g,"\\'");
+      const priceTd = p
+        ? `<td>${fmtPrice(p,'JP')}</td>`
+        : `<td><input type="number" min="0" step="1" placeholder="輸入現價"
+              value="${prices[sym]||''}"
+              style="width:90px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;
+                     padding:3px 6px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px"
+              onchange="setManualPrice('${safeSym}',this.value)"
+              title="點擊輸入 ${sym} 的現價（¥）"></td>`;
+      tr.innerHTML=`<td class="sym">${sym}</td>
+        <td style="color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis">${h.name}</td>
+        <td>${fmtQty(h.qty)}</td>
+        <td>${fmtPrice(h.avgCost,'JP')}</td>
+        ${priceTd}
+        <td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td>
+        <td>${pnlStr}</td><td>${pctStr}</td>
+        ${srcTd(h)}${removeTd(sym)}`;
+      tb.appendChild(tr);
+    }
+    const el = document.getElementById(summaryId);
+    if (el) el.textContent = summaryText(rows, summaryLabel);
+  }
+
+  renderUSRows('holdings-tbody-us',    usStockRows, 'us-summary',    '檔');
+  renderUSRows('holdings-tbody-usetf', usEtfRows,   'usetf-summary', '檔');
+  renderTWRows('holdings-tbody-tw',    twStockRows, 'tw-summary',    '檔');
+  renderTWRows('holdings-tbody-twetf', twEtfRows,   'twetf-summary', '檔');
+  renderJPRows('holdings-tbody-jp',    jpStockRows, 'jp-summary',    '檔');
+  renderJPRows('holdings-tbody-jpetf', jpEtfRows,   'jpetf-summary', '檔');
+
+  // 期權區
+  const tbOpt = document.getElementById('holdings-tbody-opt');
+  if (tbOpt) {
+    tbOpt.innerHTML = '';
+    let optTotalPnl=0;
+    for (const {sym,h,p,valTWD,pnlTWD,pct} of optRows) {
+      if (pnlTWD !== null) optTotalPnl += pnlTWD;
+      const [pnlStr,pctStr] = pnlTd(pnlTWD, pct);
+      const parts = sym.split(' ');
+      const underlying = parts[0]||sym;
+      const expiry = parts[1]||'';
+      const strike = parts[2]||'';
+      const nameL = (h.name||sym).toLowerCase();
+      const optType = nameL.includes('put')||sym.toLowerCase().endsWith(' p')||/\.00 p$/i.test(sym) ? 'PUT'
+                    : nameL.includes('call')||sym.toLowerCase().endsWith(' c')||/\.00 c$/i.test(sym) ? 'CALL' : '';
+      const optLabel = optType ? `<span class="tag" style="background:${optType==='PUT'?'rgba(255,77,109,0.15)':'rgba(0,229,160,0.15)'};color:${optType==='PUT'?'var(--red)':'var(--green)'}">${optType}</span>` : '';
+      const direction = h.qty < 0 ? '<span class="tag tag-sell">賣出</span>' : '<span class="tag tag-buy">買入</span>';
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="sym" style="font-size:12px">${underlying} ${strike}<br><span style="font-size:9px;color:var(--muted)">${expiry}</span></td>
+        <td>${direction} ${optLabel}</td>
+        <td>${fmtQty(Math.abs(h.qty))} 口</td>
+        <td>${fmtPrice(h.avgCost,'US')}</td>
+        <td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td>
+        <td>${pnlStr}</td><td>${pctStr}</td>
+        ${srcTd(h)}${removeTd(sym)}`;
+      tbOpt.appendChild(tr);
+    }
+    const optSum = document.getElementById('opt-summary');
+    if(optSum) optSum.textContent = `${optRows.length} 口 · 損益 ${optTotalPnl>=0?'+':''}NT$${Math.round(optTotalPnl).toLocaleString()}`;
+  }
+}
+// 手動輸入現價（存入 prices 並重新渲染）
+function setManualPrice(sym, val) {
+  const p = parseFloat(val);
+  if (isNaN(p) || p <= 0) return;
+  const clean = (sym||'').replace(/\xa0/g,'').trim();
+  prices[clean] = p;
+  prices[sym]   = p;
+  save(KEYS.prices, prices);
+  renderDashboard();
+  renderHoldings();
+  setPriceStatus(`手動更新 ${clean} = ${p}`, 'var(--green)');
+}
+
+function removeHolding(sym) {
+  if (!confirm(`移除 ${sym}？這會同時刪除基準持倉與相關交易紀錄。`)) return;
+  const basis = load(KEYS.basis) || {};
+  delete basis[sym];
+  save(KEYS.basis, basis);
+  trades = trades.filter(t => t.symbol !== sym);
+  save(KEYS.trades, trades);
+  rebuildFromTrades();
+  renderHoldings();
+}
+
+// ══════════════════════════════════════════════════
+// RENDER REALIZED
+// ══════════════════════════════════════════════════
+function renderRealized() {
+  const tbody=document.getElementById('realized-tbody');
+  tbody.innerHTML='';
+  const sorted=[...realized].sort((a,b)=>b.sellDate.localeCompare(a.sellDate));
+  for (const r of sorted) {
+    const tr=document.createElement('tr');
+    const pc=r.pnl>=0?'pos':'neg';
+    const pnlTWD=toTWD(r.pnl,r.market);
+    tr.innerHTML=`<td style="color:var(--muted)">${r.sellDate}</td>
+      <td class="sym">${r.symbol}</td>
+      <td style="color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis">${r.name}</td>
+      <td>${marketTag(r.market)}</td>
+      <td>${fmtQty(r.qty)}</td>
+      <td>${fmtNum(r.cost,r.market)}</td>
+      <td>${fmtNum(r.proceeds,r.market)}</td>
+      <td class="${pc}">${(pnlTWD>=0?'+':'')+'NT$'+Math.round(pnlTWD).toLocaleString()}</td>
+      <td class="${pc}">${(r.pct*100).toFixed(2)}%</td>
+      <td style="color:var(--muted);font-size:10px">${r.broker}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ══════════════════════════════════════════════════
+// CHARTS
+// ══════════════════════════════════════════════════
+let charts={};
+function renderCharts() {
+  Object.values(charts).forEach(c=>c?.destroy?.());
+  charts={};
+  const gc='rgba(255,255,255,0.05)';
+  Chart.defaults.color='#66667a';
+  Chart.defaults.borderColor=gc;
+  const pal=['#00e5a0','#5b9fff','#ffd166','#b57bee','#ff4d6d','#00c9ff','#ffab76','#c3f73a','#ff78ac','#38bdf8','#a78bfa','#fb923c'];
+
+  const hArr=Object.entries(inventory);
+  const top12=hArr.map(([s,h])=>{const p=prices[s];const v=p?toTWD(p*h.qty,h.market):toTWD(h.totalCost,h.market);return{s,v};}).sort((a,b)=>b.v-a.v).slice(0,12);
+
+  charts.alloc=new Chart(document.getElementById('chart-alloc'),{
+    type:'doughnut',data:{labels:top12.map(x=>x.s),datasets:[{data:top12.map(x=>x.v),backgroundColor:pal,borderWidth:0,hoverOffset:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:10}}}}}
+  });
+
+  const top10pnl=hArr.map(([s,h])=>{const p=prices[s];if(!p)return null;const v=toTWD(p*h.qty,h.market);const c=toTWD(h.totalCost,h.market);return{s,pnl:v-c};}).filter(Boolean).sort((a,b)=>Math.abs(b.pnl)-Math.abs(a.pnl)).slice(0,10);
+  charts.pnl=new Chart(document.getElementById('chart-pnl'),{
+    type:'bar',data:{labels:top10pnl.map(x=>x.s),datasets:[{data:top10pnl.map(x=>Math.round(x.pnl)),backgroundColor:top10pnl.map(x=>x.pnl>=0?'rgba(0,229,160,0.7)':'rgba(255,77,109,0.7)'),borderRadius:4,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:gc}}}}
+  });
+
+  const mktV={TW:0,US:0,JP:0,OPT:0};
+  for(const[s,h]of hArr){const p=prices[s];const v=p?toTWD(p*h.qty,h.market):toTWD(h.totalCost,h.market);mktV[h.market]=(mktV[h.market]||0)+v;}
+  const mktEntries=Object.entries(mktV).filter(([,v])=>v>0);
+  charts.mkt=new Chart(document.getElementById('chart-mkt'),{
+    type:'pie',data:{labels:mktEntries.map(([k])=>k),datasets:[{data:mktEntries.map(([,v])=>v),backgroundColor:['#00e5a0','#5b9fff','#ff6b8a','#b57bee'],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:11}}}}}
+  });
+
+  const monthly={};
+  for(const r of realized){const ym=r.sellDate.substring(0,7);monthly[ym]=(monthly[ym]||0)+toTWD(r.pnl,r.market);}
+  const ymKeys=Object.keys(monthly).sort();
+  charts.monthly=new Chart(document.getElementById('chart-monthly'),{
+    type:'bar',data:{labels:ymKeys,datasets:[{data:ymKeys.map(k=>Math.round(monthly[k])),backgroundColor:ymKeys.map(k=>monthly[k]>=0?'rgba(0,229,160,0.7)':'rgba(255,77,109,0.7)'),borderRadius:4,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{maxRotation:45,font:{size:9}}},y:{grid:{color:gc}}}}
+  });
+}
+
+// ══════════════════════════════════════════════════
+// CASH MANAGEMENT
+// ══════════════════════════════════════════════════
+const CURRENCY_META = {
+  TWD:{flag:'🇹🇼',name:'新台幣',symbol:'NT$'},
+  USD:{flag:'🇺🇸',name:'美元',symbol:'$'},
+  EUR:{flag:'🇪🇺',name:'歐元',symbol:'€'},
+  JPY:{flag:'🇯🇵',name:'日圓',symbol:'¥'},
+  GBP:{flag:'🇬🇧',name:'英鎊',symbol:'£'},
+  CNY:{flag:'🇨🇳',name:'人民幣',symbol:'¥'},
+  HKD:{flag:'🇭🇰',name:'港幣',symbol:'HK$'},
+  SGD:{flag:'🇸🇬',name:'新加坡幣',symbol:'S$'},
+  AUD:{flag:'🇦🇺',name:'澳幣',symbol:'A$'},
+  CAD:{flag:'🇨🇦',name:'加幣',symbol:'C$'},
+  CHF:{flag:'🇨🇭',name:'瑞郎',symbol:'CHF'},
+  KRW:{flag:'🇰🇷',name:'韓元',symbol:'₩'}
+};
+
+// 幣別選單切換「其他」
+document.getElementById('cash-currency')?.addEventListener('change', function() {
+  const wrap = document.getElementById('cash-other-wrap');
+  if (wrap) wrap.style.display = this.value === 'OTHER' ? '' : 'none';
+  // 自動填入預設匯率
+  const fxInput = document.getElementById('cash-fx');
+  if (fxInput && this.value !== 'OTHER') {
+    fxInput.value = cashFxRates[this.value] || '';
+  }
+});
+
+function addCashAccount() {
+  let currency = document.getElementById('cash-currency').value;
+  if (currency === 'OTHER') {
+    currency = (document.getElementById('cash-other-code').value || '').trim().toUpperCase();
+    if (!currency || currency.length < 2 || currency.length > 5) {
+      showCashStatus('請輸入 2-5 碼幣別代碼', true); return;
+    }
+  }
+  const account = (document.getElementById('cash-account').value || '').trim();
+  const amount  = parseFloat(document.getElementById('cash-amount').value);
+  const fxToTWD = parseFloat(document.getElementById('cash-fx').value);
+  const note    = (document.getElementById('cash-note').value || '').trim();
+
+  if (!account) { showCashStatus('請輸入帳戶名稱', true); return; }
+  if (isNaN(amount) || amount < 0) { showCashStatus('金額不可為負數', true); return; }
+  if (isNaN(fxToTWD) || fxToTWD <= 0) { showCashStatus('請輸入對台幣匯率', true); return; }
+
+  const id = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+  cashAccounts.push({ id, currency, account, amount, fxToTWD, note, updatedAt: new Date().toISOString().slice(0,10) });
+  cashFxRates[currency] = fxToTWD;
+  save(KEYS.cash, cashAccounts);
+  save(KEYS.cashFx, cashFxRates);
+
+  showCashStatus(`已新增：${account} ${currency} ${amount.toLocaleString()}`);
+  // 清空
+  ['cash-account','cash-amount','cash-note'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('cash-other-code') && (document.getElementById('cash-other-code').value = '');
+  renderCash();
+}
+
+function showCashStatus(msg, isErr) {
+  const el = document.getElementById('cash-status');
+  if (!el) return;
+  el.style.color = isErr ? 'var(--red)' : 'var(--green)';
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+function updateCashAmount(id, val) {
+  const amt = parseFloat(val);
+  if (isNaN(amt) || amt < 0) return;
+  const acc = cashAccounts.find(c => c.id === id);
+  if (!acc) return;
+  acc.amount = amt;
+  acc.updatedAt = new Date().toISOString().slice(0,10);
+  save(KEYS.cash, cashAccounts);
+  renderCashStats();
+}
+
+function updateCashFx(currency, val) {
+  const fx = parseFloat(val);
+  if (isNaN(fx) || fx <= 0) return;
+  cashFxRates[currency] = fx;
+  // 同步更新所有該幣別帳戶的 fxToTWD
+  cashAccounts.filter(c => c.currency === currency).forEach(c => c.fxToTWD = fx);
+  save(KEYS.cashFx, cashFxRates);
+  save(KEYS.cash, cashAccounts);
+  renderCashStats();
+}
+
+function deleteCashAccount(id) {
+  const acc = cashAccounts.find(c => c.id === id);
+  if (!acc || !confirm(`確定刪除「${acc.account}」（${acc.currency} ${acc.amount.toLocaleString()}）？`)) return;
+  cashAccounts = cashAccounts.filter(c => c.id !== id);
+  save(KEYS.cash, cashAccounts);
+  renderCash();
+}
+
+function renderCash() {
+  renderCashStats();
+  renderCashSections();
+  renderBrokerMap();
+  renderCashLog();
+}
+
+function renderCashStats() {
+  const grid = document.getElementById('cash-stats-grid');
+  if (!grid) return;
+
+  // 按幣別分組統計
+  const byCurrency = {};
+  let grandTotalTWD = 0;
+  for (const acc of cashAccounts) {
+    if (!byCurrency[acc.currency]) byCurrency[acc.currency] = { total: 0, fx: acc.fxToTWD };
+    byCurrency[acc.currency].total += acc.amount;
+    byCurrency[acc.currency].fx = acc.fxToTWD;
+  }
+  for (const [cur, data] of Object.entries(byCurrency)) {
+    grandTotalTWD += data.total * data.fx;
+  }
+
+  const meta = (cur) => CURRENCY_META[cur] || { flag:'🌐', name:cur, symbol:cur };
+
+  let html = `<div class="stat-card" style="border-color:var(--green);border-width:1.5px">
+    <div class="stat-label">現金總額 (TWD)</div>
+    <div class="stat-value neu" style="color:var(--green)">NT$${Math.round(grandTotalTWD).toLocaleString()}</div>
+    <div class="stat-sub">${Object.keys(byCurrency).length} 種幣別 · ${cashAccounts.length} 個帳戶</div>
+  </div>`;
+
+  for (const [cur, data] of Object.entries(byCurrency).sort((a,b)=>(b[1].total*b[1].fx)-(a[1].total*a[1].fx))) {
+    const m = meta(cur);
+    const twdVal = Math.round(data.total * data.fx);
+    html += `<div class="stat-card">
+      <div class="stat-label">${m.flag} ${cur}</div>
+      <div class="stat-value neu">${m.symbol}${data.total.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2})}</div>
+      <div class="stat-sub">≈ NT$${twdVal.toLocaleString()} · 匯率 ${data.fx}</div>
+    </div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function renderCashSections() {
+  const container = document.getElementById('cash-sections');
+  if (!container) return;
+
+  // 按幣別分組
+  const groups = {};
+  for (const acc of cashAccounts) {
+    if (!groups[acc.currency]) groups[acc.currency] = [];
+    groups[acc.currency].push(acc);
+  }
+
+  if (Object.keys(groups).length === 0) {
+    container.innerHTML = `<div class="card"><div style="text-align:center;padding:30px;color:var(--muted)">尚無現金帳戶，請在上方新增</div></div>`;
+    return;
+  }
+
+  const meta = (cur) => CURRENCY_META[cur] || { flag:'🌐', name:cur, symbol:cur };
+
+  // 依幣別台幣總額排序
+  const sortedCurrencies = Object.entries(groups).sort((a,b) => {
+    const aTWD = a[1].reduce((s,c) => s + c.amount * c.fxToTWD, 0);
+    const bTWD = b[1].reduce((s,c) => s + c.amount * c.fxToTWD, 0);
+    return bTWD - aTWD;
+  });
+
+  let html = '';
+  for (const [currency, accounts] of sortedCurrencies) {
+    const m = meta(currency);
+    const subtotal = accounts.reduce((s,a) => s + a.amount, 0);
+    const subtotalTWD = accounts.reduce((s,a) => s + a.amount * a.fxToTWD, 0);
+    const tagColor = currency === 'TWD' ? 'tag-tw' : currency === 'USD' ? 'tag-us' : currency === 'JPY' ? 'tag-jp' : 'tag-opt';
+
+    html += `<div class="card" style="margin-bottom:16px">
+      <div class="card-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span class="tag ${tagColor}" style="font-size:11px;padding:3px 8px">${m.flag} ${currency}</span>
+        ${m.name}
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">
+          小計 ${m.symbol}${subtotal.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2})} · ≈NT$${Math.round(subtotalTWD).toLocaleString()}
+        </span>
+      </div>
+      ${currency !== 'TWD' ? `<div style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:10px;color:var(--muted)">匯率 1 ${currency} =</span>
+        <input type="number" value="${cashFxRates[currency] || accounts[0].fxToTWD}" min="0" step="any"
+          style="width:100px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px"
+          onchange="updateCashFx('${currency}',this.value)">
+        <span style="font-size:10px;color:var(--muted)">TWD</span>
+        <span style="font-size:9px;color:var(--green);opacity:0.7" title="點擊「更新報價」時自動抓取最新匯率">⟳ 自動更新</span>
+      </div>` : ''}
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>帳戶名稱</th><th>金額 (${currency})</th><th>≈ TWD</th><th>備註</th><th>更新日期</th><th>操作</th>
+          </tr></thead>
+          <tbody>`;
+
+    for (const acc of accounts) {
+      const twdVal = Math.round(acc.amount * acc.fxToTWD);
+      const safeId = acc.id.replace(/'/g,"\\'");
+      html += `<tr>
+        <td style="font-weight:500">${acc.account}</td>
+        <td><input type="number" value="${acc.amount}" min="0" step="any"
+          style="width:130px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;text-align:right"
+          onchange="updateCashAmount('${safeId}',this.value)"></td>
+        <td style="color:var(--muted)">NT$${twdVal.toLocaleString()}</td>
+        <td style="color:var(--muted);font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${acc.note || '—'}</td>
+        <td style="color:var(--muted);font-size:10px">${acc.updatedAt || '—'}</td>
+        <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="deleteCashAccount('${safeId}')">刪除</button></td>
+      </tr>`;
+    }
+
+    html += `</tbody></table></div></div>`;
+  }
+  container.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════
+// BROKER MAP — 券商→現金帳戶對應
+// ══════════════════════════════════════════════════
+function renderBrokerMap() {
+  const el = document.getElementById('broker-map-table');
+  if (!el) return;
+  const entries = Object.entries(brokerMap);
+  const accountNames = cashAccounts.map(a => a.account);
+  let html = `<table><thead><tr><th>券商代碼</th><th>對應現金帳戶</th><th>操作</th></tr></thead><tbody>`;
+  for (const [broker, account] of entries) {
+    const safeBroker = broker.replace(/'/g,"\\'");
+    const optionsHtml = [`<option value="">(不連動)</option>`]
+      .concat(accountNames.map(n => `<option value="${n}" ${n===account?'selected':''}>${n}</option>`))
+      .join('');
+    html += `<tr>
+      <td style="font-weight:500">${broker}</td>
+      <td><select onchange="updateBrokerMap('${safeBroker}',this.value)"
+        style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px;min-width:160px">
+        ${optionsHtml}
+      </select></td>
+      <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeBrokerMap('${safeBroker}')">刪除</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function updateBrokerMap(broker, account) {
+  brokerMap[broker] = account;
+  save(KEYS.brokerMap, brokerMap);
+}
+
+function removeBrokerMap(broker) {
+  delete brokerMap[broker];
+  save(KEYS.brokerMap, brokerMap);
+  renderBrokerMap();
+}
+
+function addBrokerMapRow() {
+  const broker = prompt('請輸入券商代碼（如 永豐、Schwab）');
+  if (!broker || !broker.trim()) return;
+  brokerMap[broker.trim()] = '';
+  save(KEYS.brokerMap, brokerMap);
+  renderBrokerMap();
+}
+
+// ══════════════════════════════════════════════════
+// CASH LOG — 現金異動紀錄
+// ══════════════════════════════════════════════════
+function renderCashLog() {
+  const tbody = document.getElementById('cash-log-tbody');
+  if (!tbody) return;
+  const sorted = [...cashLog].sort((a,b) => (b.ts||0) - (a.ts||0)).slice(0, 50);
+  if (sorted.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">尚無異動紀錄</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sorted.map(l => {
+    const cls = l.amount >= 0 ? 'pos' : 'neg';
+    const sign = l.amount >= 0 ? '+' : '';
+    const fmtAmt = l.currency === 'TWD' ? `NT$${Math.round(l.amount).toLocaleString()}`
+                 : l.currency === 'USD' ? `$${l.amount.toFixed(2)}`
+                 : `${l.currency} ${l.amount.toFixed(2)}`;
+    return `<tr>
+      <td style="color:var(--muted);font-size:11px">${l.date||'—'}</td>
+      <td style="font-weight:500;font-size:11px">${l.account}</td>
+      <td><span class="tag ${l.currency==='TWD'?'tag-tw':l.currency==='USD'?'tag-us':l.currency==='JPY'?'tag-jp':'tag-opt'}">${l.currency}</span></td>
+      <td style="font-size:10px">${l.type}</td>
+      <td class="${cls}" style="font-size:12px">${sign}${fmtAmt}</td>
+      <td style="color:var(--muted);font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${l.desc||''}</td>
+    </tr>`;
+  }).join('');
+}
+
+function clearCashLog() {
+  if (!confirm('確定清除所有現金異動紀錄？')) return;
+  cashLog = [];
+  save(KEYS.cashLog, cashLog);
+  renderCashLog();
+}
+
+// ══════════════════════════════════════════════════
+// LOG
+// ══════════════════════════════════════════════════
+function addLog(msg, type='ok') {
+  const ts=new Date().toLocaleTimeString('zh-TW');
+  importLog.unshift({ ts, msg, type });
+  if (importLog.length>200) importLog.length=200;
+  save(KEYS.log, importLog);
+  renderImportLog();
+}
+function renderImportLog() {
+  const el=document.getElementById('import-log');
+  el.innerHTML=importLog.slice(0,10).map(l=>`<div class="log-line log-${l.type}">[${l.ts}] ${l.msg}</div>`).join('');
+}
+function renderFullLog() {
+  const el=document.getElementById('full-log');
+  el.innerHTML=importLog.map(l=>`<div class="log-line log-${l.type}">[${l.ts}] ${l.msg}</div>`).join('');
+}
+function clearImportLog() { importLog=[]; save(KEYS.log,importLog); renderFullLog(); }
+
+// ══════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════
+function toTWD(v, market) { if (market==='TW' || market==='ESB') return v; if (market==='JP') return v * (cashFxRates['JPY'] || 0.22); return v*fxRate; }
+function fmtPrice(p, market) { if(!p)return'—'; if(market==='TW')return'NT$'+p.toFixed(2); if(market==='JP')return'¥'+Math.round(p).toLocaleString(); return'$'+p.toFixed(2); }
+function fmtNum(n, market) {
+  if(!n&&n!==0)return'—';
+  const s=n<0?'-':'', a=Math.abs(n);
+  if(market==='TW')return s+'NT$'+Math.round(a).toLocaleString();
+  if(market==='JP')return s+'¥'+Math.round(a).toLocaleString();
+  return s+'$'+a.toFixed(2);
+}
+function fmtQty(q) { if(!q)return'0'; return q%1===0?q.toLocaleString():q.toFixed(4); }
+function marketTag(m) {
+  const map={TW:'tag-tw',US:'tag-us',OPT:'tag-opt',JP:'tag-jp'};
+  return `<span class="tag ${map[m]||'tag-us'}">${m}</span>`;
+}
+function setEl(id, val, cls) {
+  const el=document.getElementById(id); if(!el)return;
+  el.textContent=val;
+  if(cls){el.className='stat-value '+cls;}
+}
+function clearInventory() {
+  if (!confirm('確定要清除全部庫存、交易紀錄與已實現損益？此操作無法復原。')) return;
+  inventory={}; trades=[]; realized=[];
+  save(KEYS.inventory,inventory); save(KEYS.basis,{}); save(KEYS.trades,trades); save(KEYS.realized,realized);
+  renderDashboard(); renderHoldings(); renderRealized(); updateStorageInfo();
+  addLog('已清除全部庫存', 'warn');
+}
+function updateStorageInfo() {
+  try {
+    let total=0;
+    for(const k of Object.values(KEYS)){const v=localStorage.getItem(k)||'';total+=v.length;}
+    const kb=(total/1024).toFixed(1);
+    const pct=Math.min(100,(total/(5*1024*1024))*100);
+    document.getElementById('storage-text').textContent=`庫存：${trades.length} 筆交易 · ${kb}KB`;
+    document.getElementById('storage-bar').style.width=pct+'%';
+  } catch(e){}
+}
+function exportCSV() {
+  let csv='\uFEFF代碼,名稱,市場,成本法,持倉量,均價,總成本(原幣),現價,市值TWD,未實現損益TWD,報酬率,來源\n';
+  for(const[sym,h]of Object.entries(inventory)){
+    const p=prices[sym]||'';
+    const costTWD=Math.round(toTWD(h.totalCost,h.market));
+    const valTWD=p?Math.round(toTWD(p*h.qty,h.market)):'';
+    const pnlTWD=valTWD!==''?valTWD-costTWD:'';
+    const pct=pnlTWD!==''&&costTWD>0?(pnlTWD/costTWD*100).toFixed(2)+'%':'';
+    csv+=[sym,h.name,h.market,h.costMethod,fmtQty(h.qty),h.avgCost.toFixed(4),h.totalCost.toFixed(2),p,valTWD,pnlTWD,pct,h.broker].join(',')+'\n';
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=`portfolio_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// ══════════════════════════════════════════════════
+// BACKUP / RESTORE / CLOUD SYNC
+// ══════════════════════════════════════════════════
+let pendingRestore = null;
+
+function gatherAllData() {
+  const backup = { _version: 2, _exportDate: new Date().toISOString() };
+  for (const [name, key] of Object.entries(KEYS)) {
+    backup[name] = load(key);
+  }
+  backup._gasUrl = load('ptv2_gas_url') || '';
+  return backup;
+}
+
+function restoreAllData(data) {
+  for (const [name, key] of Object.entries(KEYS)) {
+    if (data[name] !== undefined && data[name] !== null) save(key, data[name]);
+  }
+  if (data._gasUrl) save('ptv2_gas_url', data._gasUrl);
+  // reload memory
+  inventory = load(KEYS.inventory) || {};
+  trades = load(KEYS.trades) || [];
+  realized = load(KEYS.realized) || [];
+  importLog = load(KEYS.log) || [];
+  prices = load(KEYS.prices) || {};
+  fxRate = parseFloat(load(KEYS.fx)) || 32.0;
+  cashAccounts = load(KEYS.cash) || [];
+  cashFxRates = load(KEYS.cashFx) || {};
+  brokerMap = load(KEYS.brokerMap) || {};
+  cashLog = load(KEYS.cashLog) || [];
+  GAS_URL = load('ptv2_gas_url') || '';
+  renderDashboard(); updateStorageInfo();
+}
+
+function backupSummary(data) {
+  const t = data.trades?.length || 0;
+  const h = Object.keys(data.inventory || {}).length;
+  const b = Object.keys(data.basis || {}).length;
+  const r = data.realized?.length || 0;
+  const ca = data.cash?.length || 0;
+  return `${h}檔持倉 · ${b}基準 · ${t}筆交易 · ${r}已實現 · ${ca}現金帳戶`;
+}
+
+// ── JSON 備份匯出 ──
+function exportBackup() {
+  const backup = gatherAllData();
+  const json = JSON.stringify(backup, null, 2);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([json], {type:'application/json;charset=utf-8'}));
+  a.download = `portfolio-backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  const st = document.getElementById('export-status');
+  if (st) { st.style.color='var(--green)'; st.textContent=`已匯出 ${(json.length/1024).toFixed(1)}KB · ${backupSummary(backup)}`; }
+}
+
+// ── JSON 備份匯入 ──
+document.getElementById('import-backup-file')?.addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('import-backup-filename').textContent = '✓ ' + file.name;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      pendingRestore = data;
+      const dt = data._exportDate ? new Date(data._exportDate).toLocaleString('zh-TW') : '未知';
+      document.getElementById('import-backup-info').innerHTML =
+        `<strong style="color:var(--text)">備份資訊</strong><br>時間：${dt}<br>${backupSummary(data)}<br>GAS URL：${data._gasUrl?'有':'無'}`;
+      document.getElementById('import-backup-preview').style.display = '';
+      document.getElementById('import-backup-status').textContent = '';
+    } catch(err) {
+      document.getElementById('import-backup-status').style.color='var(--red)';
+      document.getElementById('import-backup-status').textContent = '格式錯誤：'+err.message;
+      pendingRestore = null;
+    }
+  };
+  reader.readAsText(file);
+});
+
+function confirmRestore() {
+  if (!pendingRestore || !confirm('確定還原？將覆蓋所有現有資料。')) return;
+  restoreAllData(pendingRestore);
+  pendingRestore = null;
+  document.getElementById('import-backup-preview').style.display = 'none';
+  document.getElementById('import-backup-status').style.color = 'var(--green)';
+  document.getElementById('import-backup-status').textContent = '✓ 還原完成';
+  addLog('從 JSON 備份還原', 'ok');
+}
+function cancelRestore() {
+  pendingRestore = null;
+  document.getElementById('import-backup-preview').style.display = 'none';
+  document.getElementById('import-backup-filename').textContent = '';
+}
+
+// ── Google Drive 雲端同步 ──
+function setSyncMsg(msg, color) {
+  const el = document.getElementById('sync-cloud-msg');
+  if (el) { el.style.color = color || 'var(--muted)'; el.textContent = msg; }
+}
+
+async function cloudSave() {
+  if (!GAS_URL) { alert('請先設定 GAS URL（報價來源）'); return; }
+  setSyncMsg('上傳中…', 'var(--gold)');
+  try {
+    const data = gatherAllData();
+    const r = await fetchWithTimeout(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'save', data }),
+      mode: 'no-cors'
+    }, 30000);
+    // no-cors 模式拿不到 response body，改用 redirect 模式
+    // 改用 GET redirect workaround 或直接信任成功
+  } catch(e) {}
+
+  // 由於 GAS POST + CORS 限制，改用可靠的方式：
+  // 透過 GET 帶壓縮資料（但資料太大）→ 改用 form POST redirect
+  try {
+    const data = gatherAllData();
+    const payload = JSON.stringify({ action: 'save', data });
+    // 用隱藏 form POST 到 GAS（GAS 會自動 redirect，但我們不需要結果）
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = GAS_URL;
+    form.target = 'sync_frame';
+    form.style.display = 'none';
+    const input = document.createElement('textarea');
+    input.name = 'payload';
+    input.value = payload;
+    form.appendChild(input);
+    // 建立隱藏 iframe
+    let iframe = document.getElementById('sync_frame');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'sync_frame';
+      iframe.name = 'sync_frame';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+    // 等待幾秒後驗證
+    setTimeout(async () => {
+      try {
+        const check = await fetchWithTimeout(`${GAS_URL}?action=load&t=${Date.now()}`, { mode:'cors' }, 15000);
+        const res = await check.json();
+        if (res.ok) {
+          const ts = new Date(res.ts).toLocaleString('zh-TW');
+          setSyncMsg(`✓ 已同步到雲端（${ts}）`, 'var(--green)');
+          showCloudInfo(res);
+        } else {
+          setSyncMsg('已送出，等待確認…', 'var(--gold)');
+        }
+      } catch(e2) {
+        setSyncMsg('已送出（無法確認，請試「從雲端下載」驗證）', 'var(--gold)');
+      }
+    }, 5000);
+  } catch(e) {
+    setSyncMsg('上傳失敗：'+e.message, 'var(--red)');
+  }
+}
+
+async function cloudLoad() {
+  if (!GAS_URL) { alert('請先設定 GAS URL（報價來源）'); return; }
+  setSyncMsg('下載中…', 'var(--gold)');
+  try {
+    const r = await fetchWithTimeout(`${GAS_URL}?action=load&t=${Date.now()}`, { mode:'cors' }, 30000);
+    const res = await r.json();
+    if (res.error) {
+      setSyncMsg(res.msg || res.error, 'var(--red)');
+      return;
+    }
+    if (!res.data) { setSyncMsg('雲端無資料', 'var(--muted)'); return; }
+    showCloudInfo(res);
+    const ts = res.ts ? new Date(res.ts).toLocaleString('zh-TW') : '未知';
+    if (!confirm(`確定從雲端還原？\n\n雲端備份時間：${ts}\n${backupSummary(res.data)}\n\n這會覆蓋目前所有本機資料。`)) {
+      setSyncMsg('已取消', 'var(--muted)'); return;
+    }
+    restoreAllData(res.data);
+    setSyncMsg(`✓ 已從雲端還原（${ts}）`, 'var(--green)');
+    addLog('從 Google Drive 雲端還原', 'ok');
+  } catch(e) {
+    setSyncMsg('下載失敗：'+e.message, 'var(--red)');
+  }
+}
+
+function showCloudInfo(res) {
+  const el = document.getElementById('sync-cloud-info');
+  if (!el) return;
+  const ts = res.ts ? new Date(res.ts).toLocaleString('zh-TW') : '—';
+  const sum = res.data ? backupSummary(res.data) : '—';
+  el.innerHTML = `雲端最後同步：<strong style="color:var(--text)">${ts}</strong> · ${sum}`;
+  el.style.display = '';
+}
+
+function clearAllData() {
+  if (!confirm('確定清除所有資料？此操作無法復原。')) return;
+  if (!confirm('再次確認：所有庫存、交易、現金、設定都會被刪除。')) return;
+  for (const key of Object.values(KEYS)) localStorage.removeItem(key);
+  localStorage.removeItem('ptv2_gas_url');
+  location.reload();
+}
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', ()=>{
+  // 遷移舊版本：把 inventory 裡 isBasis:true 的項目搬到 KEYS.basis
+  const oldBasis = load(KEYS.basis) || {};
+  let migrated = 0;
+  for (const [s,h] of Object.entries(inventory)) {
+    if (h.isBasis && !oldBasis[s]) { oldBasis[s] = h; migrated++; }
+  }
+  if (migrated > 0) { save(KEYS.basis, oldBasis); console.log(`遷移 ${migrated} 筆舊基準持倉`); }
+
+  renderDashboard();
+  renderImportLog();
+  updateStorageInfo();
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('b-date').value = today;
+  document.getElementById('basis-upload-date').value = today;
+  const mtDate = document.getElementById('mt-date');
+  if (mtDate) mtDate.value = today;
+  // 如果有快取報價，顯示說明
+  if (Object.keys(prices).length > 0) {
+    const el = document.getElementById('price-cached');
+    if (el) el.textContent = `（使用快取報價，點「更新報價」抓最新）`;
+  }
+});
+</script>
+</body>
+</html>
