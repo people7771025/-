@@ -956,24 +956,27 @@ function mergeBasisItems(items, source) {
   const basisDate = getBasisDate();
   for (const item of items) {
     if (!item.symbol || item.qty === 0) continue;
-    const sym    = item.symbol.replace(/\xa0/g,'').trim();  // 標準化key
-    const newQty = Math.abs(item.qty);
-    const newCost= Math.abs(item.avgCost);
-    if (newQty === 0 || newCost === 0) continue;
+    const sym = item.symbol.replace(/\xa0/g,'').trim();
+    const isOpt = item.isOption || item.market === 'OPT';
+    // 期權保留正負號（正=buy, 負=sell），其他取絕對值
+    const newQty = isOpt ? item.qty : Math.abs(item.qty);
+    const newCost = Math.abs(item.avgCost);
+    if (Math.abs(newQty) === 0 || newCost === 0) continue;
     if (sym in basis) {
       const old = basis[sym];
-      const oldQty = Math.abs(old.qty);
-      const totalQty = oldQty + newQty;
-      const weightAvg = totalQty > 0 ? (oldQty*old.avgCost + newQty*newCost) / totalQty : newCost;
-      old.qty        = totalQty;
-      old.avgCost    = weightAvg;
-      old.totalCost  = totalQty * weightAvg;
-      old.broker     = old.broker === source ? source : old.broker + '+' + source;
-      old.basisDate  = basisDate;
+      const absOld = Math.abs(old.qty), absNew = Math.abs(newQty);
+      const totalQty = isOpt ? (old.qty + newQty) : (absOld + absNew);
+      const absTotal = Math.abs(totalQty);
+      const weightAvg = absTotal > 0 ? (absOld*Math.abs(old.avgCost) + absNew*newCost) / absTotal : newCost;
+      old.qty = totalQty;
+      old.avgCost = weightAvg;
+      old.totalCost = absTotal * weightAvg;
+      old.broker = old.broker === source ? source : old.broker + '+' + source;
+      old.basisDate = basisDate;
       merged++;
     } else {
       basis[sym] = {
-        qty: newQty, avgCost: newCost, totalCost: newQty*newCost,
+        qty: newQty, avgCost: newCost, totalCost: Math.abs(newQty)*newCost,
         name: item.name || sym, market: item.market, broker: source,
         isOption: item.isOption || false, isBasis: true, basisDate,
         costMethod: (item.market === 'TW' || item.market === 'ESB') ? 'WAC' : 'FIFO'
@@ -982,11 +985,10 @@ function mergeBasisItems(items, source) {
     }
   }
   save(KEYS.basis, basis);
-  addBasisLog(`[${source}] 新增 ${added}、合併 ${merged} 筆`, added+merged>0?'ok':'warn');
+  addBasisLog('[' + source + '] 新增 ' + added + '、合併 ' + merged + ' 筆', added+merged>0?'ok':'warn');
   rebuildFromTrades();
   renderBasis();
 }
-
 // ══════════════════════════════════════════════════
 // 庫存解析器 — 永豐金
 // 欄位: 商品(代碼+名稱) | 今日餘額 | 成本均價
@@ -1082,16 +1084,18 @@ function parseBasisFT(rows, filename) {
     if (c0 === '代號' || c0.replace(/\u00a0/g,'').trim() === '代號') { inSection = true; continue; }
     if (c0.includes('總值') || (c0.includes('=') && c0.includes('$'))) { inSection = false; continue; }
     if (!inSection || !c0) continue;
-    const qty     = parseFloat(r[1]) || 0;
-    const avgCost = parseFloat(r[11]) || 0;
+    const qty = parseFloat(r[1]) || 0;
+    let avgCost = parseFloat(r[11]) || 0;
     if (qty === 0 && avgCost === 0) continue;
     const isOpt = /\d{2}\/\d{2}\/\d{4}/.test(c0) || c0.split(' ').length > 2;
+    // Firstrade 期權單位成本是每股價格，需 ×100 換算為每口合約成本
+    if (isOpt) avgCost = Math.abs(avgCost) * 100;
+    // 保留 qty 正負號：正=buy, 負=sell
     items.push({ symbol:c0, name:c0, qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
   }
-  addBasisLog(`Firstrade：解析 ${items.length} 筆持倉（含期權）`);
+  addBasisLog('Firstrade：解析 ' + items.length + ' 筆持倉（含期權）');
   mergeBasisItems(items, 'FT(庫存)');
 }
-
 // ══════════════════════════════════════════════════
 // 庫存解析器 — Schwab 嘉信（CSV）
 // 欄位: Symbol | Qty | Cost Basis（總成本） | Asset Type
@@ -1113,9 +1117,12 @@ function parseBasisSchwab(file) {
         if (assetType === 'Cash and Money Market') continue;
         const qty = parseFloat((r['Qty (Quantity)']||'').replace(/[,"]/g,'')) || 0;
         const totalCost = parseFloat((r['Cost Basis']||'').replace(/[$,"]/g,'')) || 0;
-        if (totalCost === 0) continue;
-        const avgCost = qty !== 0 ? Math.abs(totalCost / qty) : 0;
+        if (totalCost === 0 && qty === 0) continue;
         const isOpt = assetType === 'Option';
+        // Schwab Cost Basis 是總成本, sell option 為負值
+        // avgCost = 每口成本（絕對值）, qty 保留正負號（正=buy, 負=sell）
+        const absQty = Math.abs(qty) || 1;
+        const avgCost = Math.abs(totalCost) / absQty;
         items.push({ symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
           qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
       }
@@ -1125,7 +1132,6 @@ function parseBasisSchwab(file) {
   };
   reader.readAsText(file);
 }
-
 // ── 永豐金 XLSX → rows 橋接（給交易紀錄自動偵測用）──
 function parseSinopacFromRows(rows, filename) {
   // 模擬原parseSinopac但接受已解析的rows
