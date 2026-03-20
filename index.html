@@ -71,6 +71,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
 .tag-us{background:var(--blue2);color:var(--blue)}
 .tag-opt{background:var(--purple2);color:var(--purple)}
 .tag-jp{background:rgba(255,77,109,0.12);color:#ff6b8a}
+.tag-crypto{background:rgba(255,169,0,0.12);color:#f7931a}
 .tag-buy{background:var(--green2);color:var(--green)}
 .tag-sell{background:var(--red2);color:var(--red)}
 .tag-basis{background:var(--gold2);color:var(--gold)}
@@ -315,6 +316,20 @@ tbody td{padding:10px 12px;white-space:nowrap}
       <tbody id="holdings-tbody-jpetf"></tbody></table>
     </div>
   </div>
+  <!-- 加密貨幣 -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span class="tag tag-crypto" style="font-size:11px;padding:3px 8px">₿ CRYPTO</span> 加密貨幣
+      <span id="crypto-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>代碼</th><th>名稱</th><th>持倉量</th><th>均價(USD)</th>
+        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="holdings-tbody-crypto"></tbody></table>
+    </div>
+  </div>
 </div>
 
 <!-- ── REALIZED ── -->
@@ -390,6 +405,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
           <option value="US">🇺🇸 US 美股（FIFO）</option>
           <option value="JP">🇯🇵 JP 日股（FIFO）</option>
           <option value="OPT">📋 OPT 期權</option>
+          <option value="CRYPTO">₿ 加密貨幣（USD計價）</option>
         </select>
       </div>
       <div class="field"><label>方向</label>
@@ -484,7 +500,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
     </div>
     <div class="field-row">
       <div class="field"><label>市場</label>
-        <select id="b-market"><option value="TW">🇹🇼 TW 台股</option><option value="US">🇺🇸 US 美股</option><option value="JP">🇯🇵 JP 日股</option><option value="OPT">📋 OPT 期權</option></select>
+        <select id="b-market"><option value="TW">🇹🇼 TW 台股</option><option value="US">🇺🇸 US 美股</option><option value="JP">🇯🇵 JP 日股</option><option value="OPT">📋 OPT 期權</option><option value="CRYPTO">₿ 加密貨幣</option></select>
       </div>
       <div class="field"><label>持倉量（股數）</label><input id="b-qty" type="number" placeholder="1000" /></div>
     </div>
@@ -961,7 +977,7 @@ function mergeBasisItems(items, source) {
     // 期權保留正負號（正=buy, 負=sell），其他取絕對值
     const newQty = isOpt ? item.qty : Math.abs(item.qty);
     const newCost = Math.abs(item.avgCost);
-    if (Math.abs(newQty) === 0 || newCost === 0) continue;
+    if (Math.abs(newQty) === 0) continue;  // newCost===0 allowed for sell options
     if (sym in basis) {
       const old = basis[sym];
       const absOld = Math.abs(old.qty), absNew = Math.abs(newQty);
@@ -1444,15 +1460,15 @@ function rebuildFromTrades() {
   // Step3：把剩餘 lots 組成 inventory
   const allSymbols = new Set([...Object.keys(basis), ...Object.keys(lots)]);
   for (const sym of allSymbols) {
-    const symLots = (lots[sym] || []).filter(l => l.qty > 0.0001);
+    const symLots = (lots[sym] || []).filter(l => Math.abs(l.qty) > 0.0001);
     const b = basis[sym];
     const meta = trades.filter(t => t.symbol === sym).pop() || {};
 
-    if (symLots.length === 0) continue;  // 全部賣光，不加入持倉
+    if (symLots.length === 0) continue;  // 無剩餘部位
 
     const totalQty  = symLots.reduce((s, l) => s + l.qty, 0);
-    const totalCost = symLots.reduce((s, l) => s + l.qty * l.costPerUnit + l.fee, 0);
-    const avgCost   = totalQty > 0 ? totalCost / totalQty : 0;
+    const totalCost = symLots.reduce((s, l) => s + Math.abs(l.qty) * l.costPerUnit + l.fee, 0);
+    const avgCost   = Math.abs(totalQty) > 0 ? totalCost / Math.abs(totalQty) : 0;
     const market    = b?.market || meta.market || 'US';
 
     newInventory[sym] = {
@@ -1584,7 +1600,7 @@ async function refreshPrices() {
   const twSyms  = [...new Set(allSyms.filter(s => inventory[Object.keys(inventory).find(k=>cleanSym(k)===s)]?.market === 'TW'))];
   const usSyms  = [...new Set(allSyms.filter(s => {
     const h = inventory[Object.keys(inventory).find(k=>cleanSym(k)===s)];
-    return h && h.market !== 'TW' && h.market !== 'ESB' && h.market !== 'JP';
+    return h && h.market !== 'TW' && h.market !== 'ESB' && h.market !== 'JP' && h.market !== 'CRYPTO';
   }))];
 
   // 取興櫃 symbol
@@ -1616,7 +1632,8 @@ async function refreshPrices() {
     ...usSyms,
     ...twSyms.map(s => `TPE:${s}`),
     ...esbSyms.map(s => `ESB:${s}`),
-    ...jpSyms.map(s => `TYO:${s}`)
+    ...jpSyms.map(s => `TYO:${s}`),
+    ...Object.keys(inventory).filter(s=>{const h=inventory[s];return h&&h.market==='CRYPTO';}).map(s=>`CRYPTO:${s.replace(/\xa0/g,'').trim()}`)
   ];
 
   // 附加匯率請求參數
@@ -1648,8 +1665,9 @@ async function refreshPrices() {
         // 興櫃：去掉 ESB: 前綴
         prices[sym.replace('ESB:', '')] = price;
       } else if (sym.startsWith('TYO:')) {
-        // 日股：去掉 TYO: 前綴
         prices[sym.replace('TYO:', '')] = price;
+      } else if (sym.startsWith('CRYPTO:')) {
+        prices[sym.replace('CRYPTO:', '')] = price;
       } else {
         prices[sym] = price;
       }
@@ -2061,7 +2079,8 @@ function renderDashboard() {
   const usC=hEntries.filter(([,h])=>h.market==='US').length;
   const jpC=hEntries.filter(([,h])=>h.market==='JP').length;
   const opC=hEntries.filter(([,h])=>h.market==='OPT').length;
-  document.getElementById('s-count-sub').textContent=`台股${twC}/美股${usC}/日股${jpC}/期權${opC}`;
+  const crC=hEntries.filter(([,h])=>h.market==='CRYPTO').length;
+  document.getElementById('s-count-sub').textContent=`台${twC}/美${usC}/日${jpC}/幣${crC}/期權${opC}`;
   document.getElementById('s-fx').textContent=fxRate.toFixed(2);
   document.getElementById('s-fx-sub').textContent='USD/TWD';
   document.getElementById('dash-sub').textContent=`${trades.length} 筆交易 · ${hEntries.length} 檔持倉 · 已實現 ${realized.length} 筆`;
@@ -2139,6 +2158,7 @@ function renderHoldings() {
   const twEtfRows   = allRows.filter(r => (r.h.market==='TW' || r.h.market==='ESB') && isTWETF(r.sym));
   const jpStockRows = allRows.filter(r => r.h.market==='JP' && !isJPETF(r.sym));
   const jpEtfRows   = allRows.filter(r => r.h.market==='JP' && isJPETF(r.sym));
+  const cryptoRows  = allRows.filter(r => r.h.market==='CRYPTO');
 
   function pnlTd(pnlTWD, pct) {
     if (pnlTWD === null) return ['—','—'];
@@ -2150,7 +2170,7 @@ function renderHoldings() {
   }
   function removeTd(sym) {
     const safe = sym.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    return `<td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">移除</button></td>`;
+    return `<td style="white-space:nowrap"><button class="btn btn-sm" onclick="editAvgCost('${safe}')" title="修改成本均價" style="margin-right:4px">✎</button><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">✕</button></td>`;
   }
   function srcTd(h) {
     const mktTag = h.market === 'ESB' ? ' <span class="tag" style="background:rgba(255,140,66,0.15);color:#ff8c42">興櫃</span>' : '';
@@ -2259,6 +2279,22 @@ function renderHoldings() {
   renderJPRows('holdings-tbody-jp',    jpStockRows, 'jp-summary',    '檔');
   renderJPRows('holdings-tbody-jpetf', jpEtfRows,   'jpetf-summary', '檔');
 
+  // 加密貨幣區
+  (function(){
+    const tb=document.getElementById('holdings-tbody-crypto'); if(!tb)return;
+    tb.innerHTML='';
+    for(const {sym,h,p,valTWD,pnlTWD,pct} of cryptoRows){
+      const [pnlStr,pctStr]=pnlTd(pnlTWD,pct);
+      const tr=document.createElement('tr');
+      const safeSym=sym.replace(/'/g,"\\'");
+      const priceTd=p?`<td>${fmtPrice(p,'CRYPTO')}</td>`:`<td><input type="number" min="0" step="any" placeholder="現價" value="${prices[sym]||''}" style="width:100px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;padding:3px 6px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px" onchange="setManualPrice('${safeSym}',this.value)"></td>`;
+      tr.innerHTML=`<td class="sym">${sym}</td><td style="color:var(--muted)">${h.name}</td><td>${fmtQty(h.qty,'CRYPTO')}</td><td>${fmtPrice(h.avgCost,'CRYPTO')}</td>${priceTd}<td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td><td>${pnlStr}</td><td>${pctStr}</td>${srcTd(h)}${removeTd(sym)}`;
+      tb.appendChild(tr);
+    }
+    const el=document.getElementById('crypto-summary');
+    if(el) el.textContent=summaryText(cryptoRows,'幣');
+  })();
+
   // 期權區
   const tbOpt = document.getElementById('holdings-tbody-opt');
   if (tbOpt) {
@@ -2314,6 +2350,27 @@ function removeHolding(sym) {
   renderHoldings();
 }
 
+function editAvgCost(sym) {
+  const h = inventory[sym];
+  if (!h) { alert('找不到持倉：' + sym); return; }
+  const mkt = h.market;
+  const curLabel = mkt === 'TW' ? 'NT$' : mkt === 'JP' ? '¥' : '$';
+  const input = prompt(
+    `修改 ${sym}（${h.name}）的成本均價\n\n目前均價：${curLabel}${h.avgCost.toFixed(mkt==='JP'?0:4)}\n持倉量：${fmtQty(h.qty)}\n\n請輸入新的成本均價（${curLabel}）：`,
+    h.avgCost.toFixed(mkt==='JP'?0:4)
+  );
+  if (input === null) return;
+  const newCost = parseFloat(input);
+  if (isNaN(newCost) || newCost <= 0) { alert('請輸入有效的正數'); return; }
+  inventory[sym].avgCost = newCost;
+  inventory[sym].totalCost = newCost * Math.abs(h.qty);
+  save(KEYS.inventory, inventory);
+  const basis = load(KEYS.basis) || {};
+  if (basis[sym]) { basis[sym].avgCost = newCost; basis[sym].totalCost = newCost * Math.abs(basis[sym].qty); save(KEYS.basis, basis); }
+  addLog(`手動修改 ${sym} 成本均價 → ${curLabel}${newCost.toFixed(4)}`, 'warn');
+  renderDashboard(); renderHoldings();
+}
+
 // ══════════════════════════════════════════════════
 // RENDER REALIZED
 // ══════════════════════════════════════════════════
@@ -2365,7 +2422,7 @@ function renderCharts() {
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:gc}}}}
   });
 
-  const mktV={TW:0,US:0,JP:0,OPT:0};
+  const mktV={TW:0,US:0,JP:0,CRYPTO:0,OPT:0};
   for(const[s,h]of hArr){const p=prices[s];const v=p?toTWD(p*h.qty,h.market):toTWD(h.totalCost,h.market);mktV[h.market]=(mktV[h.market]||0)+v;}
   const mktEntries=Object.entries(mktV).filter(([,v])=>v>0);
   charts.mkt=new Chart(document.getElementById('chart-mkt'),{
@@ -2702,7 +2759,7 @@ function clearImportLog() { importLog=[]; save(KEYS.log,importLog); renderFullLo
 // UTILS
 // ══════════════════════════════════════════════════
 function toTWD(v, market) { if (market==='TW' || market==='ESB') return v; if (market==='JP') return v * (cashFxRates['JPY'] || 0.22); return v*fxRate; }
-function fmtPrice(p, market) { if(!p)return'—'; if(market==='TW')return'NT$'+p.toFixed(2); if(market==='JP')return'¥'+Math.round(p).toLocaleString(); return'$'+p.toFixed(2); }
+function fmtPrice(p, market) { if(!p)return'—'; if(market==='TW')return'NT$'+p.toFixed(2); if(market==='JP')return'¥'+Math.round(p).toLocaleString(); if(market==='CRYPTO')return'$'+p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:6}); return'$'+p.toFixed(2); }
 function fmtNum(n, market) {
   if(!n&&n!==0)return'—';
   const s=n<0?'-':'', a=Math.abs(n);
@@ -2710,9 +2767,9 @@ function fmtNum(n, market) {
   if(market==='JP')return s+'¥'+Math.round(a).toLocaleString();
   return s+'$'+a.toFixed(2);
 }
-function fmtQty(q) { if(!q)return'0'; return q%1===0?q.toLocaleString():q.toFixed(4); }
+function fmtQty(q, market) { if(!q)return'0'; if(market==='CRYPTO') return q.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:8}); return q%1===0?q.toLocaleString():q.toFixed(4); }
 function marketTag(m) {
-  const map={TW:'tag-tw',US:'tag-us',OPT:'tag-opt',JP:'tag-jp'};
+  const map={TW:'tag-tw',US:'tag-us',OPT:'tag-opt',JP:'tag-jp',CRYPTO:'tag-crypto'};
   return `<span class="tag ${map[m]||'tag-us'}">${m}</span>`;
 }
 function setEl(id, val, cls) {
