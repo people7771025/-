@@ -71,7 +71,6 @@ tbody td{padding:10px 12px;white-space:nowrap}
 .tag-us{background:var(--blue2);color:var(--blue)}
 .tag-opt{background:var(--purple2);color:var(--purple)}
 .tag-jp{background:rgba(255,77,109,0.12);color:#ff6b8a}
-.tag-crypto{background:rgba(255,169,0,0.12);color:#f7931a}
 .tag-buy{background:var(--green2);color:var(--green)}
 .tag-sell{background:var(--red2);color:var(--red)}
 .tag-basis{background:var(--gold2);color:var(--gold)}
@@ -316,20 +315,6 @@ tbody td{padding:10px 12px;white-space:nowrap}
       <tbody id="holdings-tbody-jpetf"></tbody></table>
     </div>
   </div>
-  <!-- 加密貨幣 -->
-  <div class="card" style="margin-bottom:16px">
-    <div class="card-title" style="display:flex;align-items:center;gap:8px">
-      <span class="tag tag-crypto" style="font-size:11px;padding:3px 8px">₿ CRYPTO</span> 加密貨幣
-      <span id="crypto-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
-    </div>
-    <div class="tbl-wrap">
-      <table><thead><tr>
-        <th>代碼</th><th>名稱</th><th>持倉量</th><th>均價(USD)</th>
-        <th>現價</th><th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
-      </tr></thead>
-      <tbody id="holdings-tbody-crypto"></tbody></table>
-    </div>
-  </div>
 </div>
 
 <!-- ── REALIZED ── -->
@@ -405,7 +390,6 @@ tbody td{padding:10px 12px;white-space:nowrap}
           <option value="US">🇺🇸 US 美股（FIFO）</option>
           <option value="JP">🇯🇵 JP 日股（FIFO）</option>
           <option value="OPT">📋 OPT 期權</option>
-          <option value="CRYPTO">₿ 加密貨幣（USD計價）</option>
         </select>
       </div>
       <div class="field"><label>方向</label>
@@ -436,13 +420,6 @@ tbody td{padding:10px 12px;white-space:nowrap}
     <div class="field-row">
       <div class="field"><label>券商（對應現金帳戶交割）</label>
         <select id="mt-broker" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
-          <option value="Schwab">嘉信證券（美股）</option>
-          <option value="FT">Firstrade 第一證券（美股）</option>
-          <option value="永豐">永豐金證券（台股）</option>
-          <option value="聯邦">聯邦證券（台股）</option>
-          <option value="統一">統一證券（台股）</option>
-          <option value="台新">台新複委託（日股）</option>
-          <option value="手動">其他（不連動現金）</option>
         </select>
       </div>
       <div class="field"><label>備註（選填）</label>
@@ -500,13 +477,17 @@ tbody td{padding:10px 12px;white-space:nowrap}
     </div>
     <div class="field-row">
       <div class="field"><label>市場</label>
-        <select id="b-market"><option value="TW">🇹🇼 TW 台股</option><option value="US">🇺🇸 US 美股</option><option value="JP">🇯🇵 JP 日股</option><option value="OPT">📋 OPT 期權</option><option value="CRYPTO">₿ 加密貨幣</option></select>
+        <select id="b-market"><option value="TW">🇹🇼 TW 台股</option><option value="US">🇺🇸 US 美股</option><option value="JP">🇯🇵 JP 日股</option><option value="OPT">📋 OPT 期權</option></select>
       </div>
       <div class="field"><label>持倉量（股數）</label><input id="b-qty" type="number" placeholder="1000" /></div>
     </div>
     <div class="field-row">
       <div class="field"><label>平均成本（每股，台股用 TWD，美股用 USD）</label><input id="b-cost" type="number" placeholder="850.00" /></div>
       <div class="field"><label>基準日期</label><input id="b-date" type="date" /></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>券商來源（選填）</label><select id="b-broker"></select></div>
+      <div class="field"></div>
     </div>
     <button class="btn btn-green" onclick="addBasis()">+ 加入庫存</button>
   </div>
@@ -1479,6 +1460,7 @@ function addBasis() {
   const qty  = parseFloat(document.getElementById('b-qty').value) || 0;
   const cost = parseFloat(document.getElementById('b-cost').value) || 0;
   const date = document.getElementById('b-date').value || new Date().toISOString().slice(0,10);
+  const broker = document.getElementById('b-broker')?.value || '手動';
 
   if (!sym || qty <= 0 || cost <= 0) {
     alert('請填寫代碼、持倉量、均價'); return;
@@ -1489,13 +1471,12 @@ function addBasis() {
     symbol: sym, name: name || sym,
     qty, avgCost: cost, market: mkt,
     isOption: false, basisDate: date
-  }], '手動');
+  }], broker);
 
-  // 覆寫 basisDate（mergeBasisItems 用 getBasisDate()，手動新增要用表單的日期）
+  // 覆寫 basisDate
   const basis = load(KEYS.basis) || {};
   if (basis[sym]) { basis[sym].basisDate = date; save(KEYS.basis, basis); }
 
-  // clear form
   ['b-sym','b-name','b-qty','b-cost'].forEach(id => document.getElementById(id).value='');
 }
 
@@ -1581,7 +1562,7 @@ async function refreshPrices() {
   const twSyms  = [...new Set(allSyms.filter(s => inventory[Object.keys(inventory).find(k=>cleanSym(k)===s)]?.market === 'TW'))];
   const usSyms  = [...new Set(allSyms.filter(s => {
     const h = inventory[Object.keys(inventory).find(k=>cleanSym(k)===s)];
-    return h && h.market !== 'TW' && h.market !== 'ESB' && h.market !== 'JP' && h.market !== 'CRYPTO';
+    return h && h.market !== 'TW' && h.market !== 'ESB' && h.market !== 'JP';
   }))];
 
   // 取興櫃 symbol
@@ -1606,14 +1587,6 @@ async function refreshPrices() {
   //   台股上櫃 → "GTSM:3661"（TPEX 上櫃用 GTSM）
   //   興櫃 → "ESB:7892"（GAS 端用 TPEX API 處理）
   //   日股 → "TYO:2644"（東京證交所，GAS 端用 GOOGLEFINANCE + Yahoo JP 備援）
-  // 取加密貨幣 symbol
-  const cryptoSyms = [...new Set(Object.keys(inventory)
-    .map(s => cleanSym(s))
-    .filter(s => {
-      const h = inventory[Object.keys(inventory).find(k => cleanSym(k) === s)];
-      return h && h.market === 'CRYPTO';
-    }))];
-
   // 收集現金帳戶中所有非 TWD 幣別，用於自動抓匯率
   const fxCurrencies = [...new Set(cashAccounts.map(a => a.currency).filter(c => c !== 'TWD'))];
 
@@ -1621,8 +1594,7 @@ async function refreshPrices() {
     ...usSyms,
     ...twSyms.map(s => `TPE:${s}`),
     ...esbSyms.map(s => `ESB:${s}`),
-    ...jpSyms.map(s => `TYO:${s}`),
-    ...cryptoSyms.map(s => `CRYPTO:${s}`)
+    ...jpSyms.map(s => `TYO:${s}`)
   ];
 
   // 附加匯率請求參數
@@ -1656,8 +1628,6 @@ async function refreshPrices() {
       } else if (sym.startsWith('TYO:')) {
         // 日股：去掉 TYO: 前綴
         prices[sym.replace('TYO:', '')] = price;
-      } else if (sym.startsWith('CRYPTO:')) {
-        prices[sym.replace('CRYPTO:', '')] = price;
       } else {
         prices[sym] = price;
       }
@@ -1752,7 +1722,7 @@ function getGasCode() {
 // 部署：延伸功能 → Apps Script → 貼上全部 → 儲存 → 部署為網頁應用程式（任何人）
 
 function testFetch() {
-  const result = doGet({ parameter: { symbols: 'AAPL,TPE:2330,TYO:2644,ESB:7892,CRYPTO:BTC,CRYPTO:ETH' } });
+  const result = doGet({ parameter: { symbols: 'AAPL,TPE:2330,TYO:2644,ESB:7892' } });
   Logger.log(result.getContent());
 }
 
@@ -1775,11 +1745,9 @@ function doGet(e) {
     const financeSyms   = [];
 
     const jpCodes = [];
-    const cryptoCodes = [];
     symbols.forEach(sym => {
       if (sym.startsWith('ESB:')) emergingCodes.push(sym.replace('ESB:', ''));
       else if (sym.startsWith('TYO:')) { financeSyms.push(sym); jpCodes.push(sym.replace('TYO:', '')); }
-      else if (sym.startsWith('CRYPTO:')) cryptoCodes.push(sym.replace('CRYPTO:', ''));
       else financeSyms.push(sym);
     });
 
@@ -1937,43 +1905,6 @@ function doGet(e) {
       });
     }
 
-    // ── 4. 加密貨幣：CoinGecko 或 Yahoo Finance ──
-    if (cryptoCodes.length > 0) {
-      // 標準化映射：常見代碼 → CoinGecko ID
-      const cgMap = {BTC:'bitcoin',ETH:'ethereum',SOL:'solana',BNB:'binancecoin',
-        XRP:'ripple',ADA:'cardano',DOGE:'dogecoin',AVAX:'avalanche-2',DOT:'polkadot',
-        MATIC:'matic-network',LINK:'chainlink',UNI:'uniswap',ATOM:'cosmos',
-        LTC:'litecoin',FIL:'filecoin',APT:'aptos',SUI:'sui',ARB:'arbitrum',
-        OP:'optimism',NEAR:'near',SHIB:'shiba-inu',PEPE:'pepe'};
-      const ids = cryptoCodes.map(s => cgMap[s.toUpperCase()] || s.toLowerCase()).filter(Boolean);
-      if (ids.length > 0) {
-        try {
-          const cgUrl = \`https://api.coingecko.com/api/v3/simple/price?ids=\${ids.join(',')}&vs_currencies=usd\`;
-          const resp = UrlFetchApp.fetch(cgUrl, { muteHttpExceptions: true, headers: {'Accept':'application/json'} });
-          if (resp.getResponseCode() === 200) {
-            const d = JSON.parse(resp.getContentText());
-            cryptoCodes.forEach(code => {
-              const cgId = cgMap[code.toUpperCase()] || code.toLowerCase();
-              if (d[cgId] && d[cgId].usd > 0) prices[\`CRYPTO:\${code}\`] = d[cgId].usd;
-            });
-          }
-        } catch(ex) {}
-      }
-      // 備援：Yahoo Finance（BTC-USD 格式）
-      cryptoCodes.forEach(code => {
-        if (prices[\`CRYPTO:\${code}\`]) return;
-        try {
-          const yUrl = \`https://query1.finance.yahoo.com/v8/finance/chart/\${code}-USD?interval=1d&range=5d\`;
-          const resp = UrlFetchApp.fetch(yUrl, { muteHttpExceptions:true, headers:{'User-Agent':'Mozilla/5.0'} });
-          if (resp.getResponseCode() === 200) {
-            const d = JSON.parse(resp.getContentText());
-            const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-            if (p && p > 0) prices[\`CRYPTO:\${code}\`] = p;
-          }
-        } catch(ex) {}
-      });
-    }
-
     return jsonOut({ prices, fx_usd_twd: fxVal, fx_rates: fxResults || {}, count: Object.keys(prices).length });
 
   } catch(err) {
@@ -2108,8 +2039,7 @@ function renderDashboard() {
   const usC=hEntries.filter(([,h])=>h.market==='US').length;
   const jpC=hEntries.filter(([,h])=>h.market==='JP').length;
   const opC=hEntries.filter(([,h])=>h.market==='OPT').length;
-  const crC=hEntries.filter(([,h])=>h.market==='CRYPTO').length;
-  document.getElementById('s-count-sub').textContent=`台${twC}/美${usC}/日${jpC}/幣${crC}/期權${opC}`;
+  document.getElementById('s-count-sub').textContent=`台股${twC}/美股${usC}/日股${jpC}/期權${opC}`;
   document.getElementById('s-fx').textContent=fxRate.toFixed(2);
   document.getElementById('s-fx-sub').textContent='USD/TWD';
   document.getElementById('dash-sub').textContent=`${trades.length} 筆交易 · ${hEntries.length} 檔持倉 · 已實現 ${realized.length} 筆`;
@@ -2187,7 +2117,6 @@ function renderHoldings() {
   const twEtfRows   = allRows.filter(r => (r.h.market==='TW' || r.h.market==='ESB') && isTWETF(r.sym));
   const jpStockRows = allRows.filter(r => r.h.market==='JP' && !isJPETF(r.sym));
   const jpEtfRows   = allRows.filter(r => r.h.market==='JP' && isJPETF(r.sym));
-  const cryptoRows  = allRows.filter(r => r.h.market==='CRYPTO');
 
   function pnlTd(pnlTWD, pct) {
     if (pnlTWD === null) return ['—','—'];
@@ -2308,37 +2237,6 @@ function renderHoldings() {
   renderJPRows('holdings-tbody-jp',    jpStockRows, 'jp-summary',    '檔');
   renderJPRows('holdings-tbody-jpetf', jpEtfRows,   'jpetf-summary', '檔');
 
-  // 加密貨幣區
-  function renderCryptoRows(tbodyId, rows, summaryId) {
-    const tb = document.getElementById(tbodyId);
-    if (!tb) return;
-    tb.innerHTML = '';
-    for (const {sym,h,p,valTWD,pnlTWD,pct} of rows) {
-      const [pnlStr,pctStr] = pnlTd(pnlTWD, pct);
-      const tr = document.createElement('tr');
-      const safeSym = sym.replace(/'/g,"\\'");
-      const priceTd = p
-        ? `<td>${fmtPrice(p,'CRYPTO')}</td>`
-        : `<td><input type="number" min="0" step="any" placeholder="輸入現價"
-              value="${prices[sym]||''}"
-              style="width:100px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;
-                     padding:3px 6px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px"
-              onchange="setManualPrice('${safeSym}',this.value)"></td>`;
-      tr.innerHTML=`<td class="sym">${sym}</td>
-        <td style="color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis">${h.name}</td>
-        <td>${fmtQty(h.qty,'CRYPTO')}</td>
-        <td>${fmtPrice(h.avgCost,'CRYPTO')}</td>
-        ${priceTd}
-        <td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td>
-        <td>${pnlStr}</td><td>${pctStr}</td>
-        ${srcTd(h)}${removeTd(sym)}`;
-      tb.appendChild(tr);
-    }
-    const el = document.getElementById(summaryId);
-    if (el) el.textContent = summaryText(rows, '幣');
-  }
-  renderCryptoRows('holdings-tbody-crypto', cryptoRows, 'crypto-summary');
-
   // 期權區
   const tbOpt = document.getElementById('holdings-tbody-opt');
   if (tbOpt) {
@@ -2445,11 +2343,11 @@ function renderCharts() {
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:gc}}}}
   });
 
-  const mktV={TW:0,US:0,JP:0,CRYPTO:0,OPT:0};
+  const mktV={TW:0,US:0,JP:0,OPT:0};
   for(const[s,h]of hArr){const p=prices[s];const v=p?toTWD(p*h.qty,h.market):toTWD(h.totalCost,h.market);mktV[h.market]=(mktV[h.market]||0)+v;}
   const mktEntries=Object.entries(mktV).filter(([,v])=>v>0);
   charts.mkt=new Chart(document.getElementById('chart-mkt'),{
-    type:'pie',data:{labels:mktEntries.map(([k])=>k),datasets:[{data:mktEntries.map(([,v])=>v),backgroundColor:['#00e5a0','#5b9fff','#ff6b8a','#f7931a','#b57bee'],borderWidth:0}]},
+    type:'pie',data:{labels:mktEntries.map(([k])=>k),datasets:[{data:mktEntries.map(([,v])=>v),backgroundColor:['#00e5a0','#5b9fff','#ff6b8a','#b57bee'],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:11}}}}}
   });
 
@@ -2632,7 +2530,7 @@ function renderCashSections() {
     const m = meta(currency);
     const subtotal = accounts.reduce((s,a) => s + a.amount, 0);
     const subtotalTWD = accounts.reduce((s,a) => s + a.amount * a.fxToTWD, 0);
-    const tagColor = currency === 'TWD' ? 'tag-tw' : currency === 'USD' ? 'tag-us' : currency === 'JPY' ? 'tag-jp' : currency === 'USDT' || currency === 'BTC' ? 'tag-crypto' : 'tag-opt';
+    const tagColor = currency === 'TWD' ? 'tag-tw' : currency === 'USD' ? 'tag-us' : currency === 'JPY' ? 'tag-jp' : 'tag-opt';
 
     html += `<div class="card" style="margin-bottom:16px">
       <div class="card-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -2707,20 +2605,41 @@ function renderBrokerMap() {
 function updateBrokerMap(broker, account) {
   brokerMap[broker] = account;
   save(KEYS.brokerMap, brokerMap);
+  populateBrokerSelects();
 }
 
 function removeBrokerMap(broker) {
   delete brokerMap[broker];
   save(KEYS.brokerMap, brokerMap);
   renderBrokerMap();
+  populateBrokerSelects();
 }
 
 function addBrokerMapRow() {
-  const broker = prompt('請輸入券商代碼（如 永豐、Schwab）');
+  const broker = prompt('請輸入券商代碼（如 永豐美股、Schwab）');
   if (!broker || !broker.trim()) return;
   brokerMap[broker.trim()] = '';
   save(KEYS.brokerMap, brokerMap);
   renderBrokerMap();
+  populateBrokerSelects();
+}
+
+// ── 動態生成券商下拉選單（從 brokerMap 即時讀取）──
+function populateBrokerSelects() {
+  const entries = Object.entries(brokerMap);
+  let html = '';
+  for (const [broker, account] of entries) {
+    const label = account ? `${broker}（→ ${account}）` : broker;
+    html += `<option value="${broker}">${label}</option>`;
+  }
+  if (!brokerMap['手動']) html += '<option value="手動">其他（不連動現金）</option>';
+  ['mt-broker','b-broker'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const prev = el.value;
+    el.innerHTML = html;
+    if (prev) el.value = prev;
+  });
 }
 
 // ══════════════════════════════════════════════════
@@ -2782,7 +2701,7 @@ function clearImportLog() { importLog=[]; save(KEYS.log,importLog); renderFullLo
 // UTILS
 // ══════════════════════════════════════════════════
 function toTWD(v, market) { if (market==='TW' || market==='ESB') return v; if (market==='JP') return v * (cashFxRates['JPY'] || 0.22); return v*fxRate; }
-function fmtPrice(p, market) { if(!p)return'—'; if(market==='TW')return'NT$'+p.toFixed(2); if(market==='JP')return'¥'+Math.round(p).toLocaleString(); if(market==='CRYPTO')return'$'+p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:6}); return'$'+p.toFixed(2); }
+function fmtPrice(p, market) { if(!p)return'—'; if(market==='TW')return'NT$'+p.toFixed(2); if(market==='JP')return'¥'+Math.round(p).toLocaleString(); return'$'+p.toFixed(2); }
 function fmtNum(n, market) {
   if(!n&&n!==0)return'—';
   const s=n<0?'-':'', a=Math.abs(n);
@@ -2790,9 +2709,9 @@ function fmtNum(n, market) {
   if(market==='JP')return s+'¥'+Math.round(a).toLocaleString();
   return s+'$'+a.toFixed(2);
 }
-function fmtQty(q, market) { if(!q)return'0'; if(market==='CRYPTO') return q.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:8}); return q%1===0?q.toLocaleString():q.toFixed(4); }
+function fmtQty(q) { if(!q)return'0'; return q%1===0?q.toLocaleString():q.toFixed(4); }
 function marketTag(m) {
-  const map={TW:'tag-tw',US:'tag-us',OPT:'tag-opt',JP:'tag-jp',CRYPTO:'tag-crypto'};
+  const map={TW:'tag-tw',US:'tag-us',OPT:'tag-opt',JP:'tag-jp'};
   return `<span class="tag ${map[m]||'tag-us'}">${m}</span>`;
 }
 function setEl(id, val, cls) {
@@ -3052,6 +2971,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderDashboard();
   renderImportLog();
   updateStorageInfo();
+  populateBrokerSelects();
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('b-date').value = today;
   document.getElementById('basis-upload-date').value = today;
