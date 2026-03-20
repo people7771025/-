@@ -958,23 +958,28 @@ function mergeBasisItems(items, source) {
   for (const item of items) {
     if (!item.symbol || item.qty === 0) continue;
     const sym    = item.symbol.replace(/\xa0/g,'').trim();  // 標準化key
-    const newQty = Math.abs(item.qty);
+    // 期權保留正負號（正=buy, 負=sell），其他取絕對值
+    const isOpt  = item.isOption || item.market === 'OPT';
+    const newQty = isOpt ? item.qty : Math.abs(item.qty);
     const newCost= Math.abs(item.avgCost);
-    if (newQty === 0 || newCost === 0) continue;
+    if (Math.abs(newQty) === 0 || newCost === 0) continue;
     if (sym in basis) {
       const old = basis[sym];
-      const oldQty = Math.abs(old.qty);
-      const totalQty = oldQty + newQty;
-      const weightAvg = totalQty > 0 ? (oldQty*old.avgCost + newQty*newCost) / totalQty : newCost;
+      // 期權同標的若方向相同才合併，否則分開（不應發生）
+      const oldQty = old.qty;
+      const absOld = Math.abs(oldQty), absNew = Math.abs(newQty);
+      const totalQty = isOpt ? (oldQty + newQty) : (absOld + absNew);
+      const absTotal = Math.abs(totalQty);
+      const weightAvg = absTotal > 0 ? (absOld*Math.abs(old.avgCost) + absNew*newCost) / absTotal : newCost;
       old.qty        = totalQty;
       old.avgCost    = weightAvg;
-      old.totalCost  = totalQty * weightAvg;
+      old.totalCost  = absTotal * weightAvg;
       old.broker     = old.broker === source ? source : old.broker + '+' + source;
       old.basisDate  = basisDate;
       merged++;
     } else {
       basis[sym] = {
-        qty: newQty, avgCost: newCost, totalCost: newQty*newCost,
+        qty: newQty, avgCost: newCost, totalCost: Math.abs(newQty)*newCost,
         name: item.name || sym, market: item.market, broker: source,
         isOption: item.isOption || false, isBasis: true, basisDate,
         costMethod: (item.market === 'TW' || item.market === 'ESB') ? 'WAC' : 'FIFO'
@@ -1084,9 +1089,12 @@ function parseBasisFT(rows, filename) {
     if (c0.includes('總值') || (c0.includes('=') && c0.includes('$'))) { inSection = false; continue; }
     if (!inSection || !c0) continue;
     const qty     = parseFloat(r[1]) || 0;
-    const avgCost = parseFloat(r[11]) || 0;
+    let avgCost = parseFloat(r[11]) || 0;
     if (qty === 0 && avgCost === 0) continue;
     const isOpt = /\d{2}\/\d{2}\/\d{4}/.test(c0) || c0.split(' ').length > 2;
+    // Firstrade 期權的單位成本是每股價格，需 ×100 換算為每口合約成本
+    if (isOpt) avgCost = Math.abs(avgCost) * 100;
+    // 保留 qty 正負號：正=buy, 負=sell
     items.push({ symbol:c0, name:c0, qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
   }
   addBasisLog(`Firstrade：解析 ${items.length} 筆持倉（含期權）`);
@@ -1114,9 +1122,13 @@ function parseBasisSchwab(file) {
         if (assetType === 'Cash and Money Market') continue;
         const qty = parseFloat((r['Qty (Quantity)']||'').replace(/[,"]/g,'')) || 0;
         const totalCost = parseFloat((r['Cost Basis']||'').replace(/[$,"]/g,'')) || 0;
-        if (totalCost === 0) continue;
-        const avgCost = qty !== 0 ? Math.abs(totalCost / qty) : 0;
+        if (totalCost === 0 && qty === 0) continue;
         const isOpt = assetType === 'Option';
+        // Schwab: Cost Basis 是總成本（期權 sell 為負值）
+        // avgCost = 每口合約成本（取絕對值 / 口數絕對值）
+        const absQty = Math.abs(qty) || 1;
+        const avgCost = Math.abs(totalCost) / absQty;
+        // 保留 qty 正負號：正=buy, 負=sell
         items.push({ symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
           qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
       }
