@@ -252,10 +252,11 @@ tbody td{padding:10px 12px;white-space:nowrap}
       <span class="tag tag-opt" style="font-size:11px;padding:3px 8px">OPT</span> 美股期權
       <span id="opt-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
     </div>
+    <div id="opt-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px"></div>
     <div class="tbl-wrap">
       <table><thead><tr>
-        <th>合約</th><th>方向</th><th>口數</th><th>成本/口</th>
-        <th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
+        <th>合約</th><th>方向</th><th>類型</th><th>口數</th><th>權利金/口</th><th>權利金小計</th>
+        <th>來源</th><th>操作</th>
       </tr></thead>
       <tbody id="holdings-tbody-opt"></tbody></table>
     </div>
@@ -2078,9 +2079,19 @@ function renderDashboard() {
     const p = prices[sym.replace(/\xa0/g,'').trim()] || prices[sym] || null;
     const costTWD = toTWD(h.totalCost, h.market);
     const valTWD  = p ? toTWD(p*h.qty, h.market) : costTWD;
-    totalCostTWD  += costTWD;
-    totalValueTWD += valTWD;
-    totalUnrealTWD += valTWD - costTWD;
+    const isOptSell = h.market === 'OPT' && h.qty < 0;
+    const isOptBuy  = h.market === 'OPT' && h.qty > 0;
+    if (isOptSell) {
+      // 賣出期權：權利金收入已在現金帳戶，不計入總市值
+    } else if (isOptBuy) {
+      // 買入期權：以成本價計入總市值
+      totalCostTWD  += costTWD;
+      totalValueTWD += costTWD;
+    } else {
+      totalCostTWD  += costTWD;
+      totalValueTWD += valTWD;
+      totalUnrealTWD += valTWD - costTWD;
+    }
     return { sym, h, p, costTWD, valTWD, pnlTWD: valTWD-costTWD, pct:(valTWD-costTWD)/costTWD };
   }).sort((a,b)=>b.valTWD-a.valTWD);
 
@@ -2320,37 +2331,75 @@ function renderHoldings() {
     if(el) el.textContent=summaryText(cryptoRows,'幣');
   })();
 
-  // 期權區
+  // 期權區 — 權利金支出/收入分類統計
   const tbOpt = document.getElementById('holdings-tbody-opt');
   if (tbOpt) {
     tbOpt.innerHTML = '';
-    let optTotalPnl=0;
-    for (const {sym,h,p,valTWD,pnlTWD,pct} of optRows) {
-      if (pnlTWD !== null) optTotalPnl += pnlTWD;
-      const [pnlStr,pctStr] = pnlTd(pnlTWD, pct);
+    let buyCallPremium=0, buyPutPremium=0, sellCallPremium=0, sellPutPremium=0;
+    let buyCallCount=0, buyPutCount=0, sellCallCount=0, sellPutCount=0;
+
+    for (const {sym,h} of optRows) {
+      const nameL = (h.name||sym).toLowerCase();
+      const symL = sym.toLowerCase();
+      const optType = nameL.includes('put')||symL.endsWith(' p')||/\.00 p$/i.test(sym) ? 'PUT'
+                    : nameL.includes('call')||symL.endsWith(' c')||/\.00 c$/i.test(sym) ? 'CALL' : '';
+      const isBuy = h.qty > 0;
+      const premiumUSD = Math.abs(h.totalCost);
+
+      if (isBuy && optType==='CALL')  { buyCallPremium+=premiumUSD; buyCallCount++; }
+      if (isBuy && optType==='PUT')   { buyPutPremium+=premiumUSD; buyPutCount++; }
+      if (!isBuy && optType==='CALL') { sellCallPremium+=premiumUSD; sellCallCount++; }
+      if (!isBuy && optType==='PUT')  { sellPutPremium+=premiumUSD; sellPutCount++; }
+
       const parts = sym.split(' ');
       const underlying = parts[0]||sym;
       const expiry = parts[1]||'';
       const strike = parts[2]||'';
-      const nameL = (h.name||sym).toLowerCase();
-      const optType = nameL.includes('put')||sym.toLowerCase().endsWith(' p')||/\.00 p$/i.test(sym) ? 'PUT'
-                    : nameL.includes('call')||sym.toLowerCase().endsWith(' c')||/\.00 c$/i.test(sym) ? 'CALL' : '';
       const optLabel = optType ? `<span class="tag" style="background:${optType==='PUT'?'rgba(255,77,109,0.15)':'rgba(0,229,160,0.15)'};color:${optType==='PUT'?'var(--red)':'var(--green)'}">${optType}</span>` : '';
-      const direction = h.qty < 0 ? '<span class="tag tag-sell">賣出</span>' : '<span class="tag tag-buy">買入</span>';
+      const direction = isBuy ? '<span class="tag tag-buy">買入</span>' : '<span class="tag tag-sell">賣出</span>';
+      const premType = isBuy
+        ? '<span style="color:var(--red);font-size:10px">權利金支出</span>'
+        : '<span style="color:var(--green);font-size:10px">權利金收入</span>';
       const tr=document.createElement('tr');
       tr.innerHTML=`<td class="sym" style="font-size:12px">${underlying} ${strike}<br><span style="font-size:9px;color:var(--muted)">${expiry}</span></td>
-        <td>${direction} ${optLabel}</td>
+        <td>${direction}</td>
+        <td>${optLabel} ${premType}</td>
         <td>${fmtQty(Math.abs(h.qty))} 口</td>
-        <td>${fmtPrice(h.avgCost,'US')}</td>
-        <td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td>
-        <td>${pnlStr}</td><td>${pctStr}</td>
+        <td>$${h.avgCost.toFixed(2)}</td>
+        <td>$${premiumUSD.toFixed(2)}</td>
         ${srcTd(h)}${removeTd(sym)}`;
       tbOpt.appendChild(tr);
     }
+
+    const totalPaid = buyCallPremium + buyPutPremium;
+    const totalReceived = sellCallPremium + sellPutPremium;
+
+    const statsEl = document.getElementById('opt-stats');
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:12px">
+          <div style="font-size:9px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px">權利金支出（計入總市值）</div>
+          <div style="font-size:18px;font-weight:700;font-family:'Syne',sans-serif;color:var(--red)">$${totalPaid.toFixed(2)}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.8">
+            Buy Call：${buyCallCount} 口 · $${buyCallPremium.toFixed(2)}<br>
+            Buy Put：${buyPutCount} 口 · $${buyPutPremium.toFixed(2)}
+          </div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:12px">
+          <div style="font-size:9px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px">權利金收入（不計入總市值）</div>
+          <div style="font-size:18px;font-weight:700;font-family:'Syne',sans-serif;color:var(--green)">$${totalReceived.toFixed(2)}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.8">
+            Sell Call：${sellCallCount} 口 · $${sellCallPremium.toFixed(2)}<br>
+            Sell Put：${sellPutCount} 口 · $${sellPutPremium.toFixed(2)}
+          </div>
+        </div>`;
+    }
+
     const optSum = document.getElementById('opt-summary');
-    if(optSum) optSum.textContent = `${optRows.length} 口 · 損益 ${optTotalPnl>=0?'+':''}NT$${Math.round(optTotalPnl).toLocaleString()}`;
+    if(optSum) optSum.textContent = `${optRows.length} 口 · 支出 $${totalPaid.toFixed(0)} · 收入 $${totalReceived.toFixed(0)}`;
   }
 }
+
 // 手動輸入現價（存入 prices 並重新渲染）
 function setManualPrice(sym, val) {
   const p = parseFloat(val);
