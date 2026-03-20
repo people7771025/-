@@ -251,11 +251,10 @@ tbody td{padding:10px 12px;white-space:nowrap}
       <span class="tag tag-opt" style="font-size:11px;padding:3px 8px">OPT</span> 美股期權
       <span id="opt-summary" style="margin-left:auto;font-size:11px;color:var(--muted)"></span>
     </div>
-    <div id="opt-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px"></div>
     <div class="tbl-wrap">
       <table><thead><tr>
-        <th>合約</th><th>方向</th><th>類型</th><th>口數</th><th>權利金/口</th><th>權利金小計</th>
-        <th>來源</th><th>操作</th>
+        <th>合約</th><th>方向</th><th>口數</th><th>成本/口</th>
+        <th>市值(TWD)</th><th>未實現損益</th><th>報酬率</th><th>來源</th><th>操作</th>
       </tr></thead>
       <tbody id="holdings-tbody-opt"></tbody></table>
     </div>
@@ -498,15 +497,8 @@ tbody td{padding:10px 12px;white-space:nowrap}
 
   <div class="card">
     <div class="card-title">③ 目前基準持倉</div>
-    <div class="flex" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-sm" onclick="clearBasisByMarket('OPT')" style="border-color:var(--red);color:var(--red)">✕ 清除全部期權基準</button>
-      <button class="btn btn-sm" onclick="clearBasisByMarket('US')" style="border-color:var(--red);color:var(--red)">✕ 清除全部美股基準</button>
-      <button class="btn btn-sm" onclick="clearBasisByMarket('TW')" style="border-color:var(--red);color:var(--red)">✕ 清除全部台股基準</button>
-      <button class="btn btn-sm" onclick="clearBasisByMarket('JP')" style="border-color:var(--red);color:var(--red)">✕ 清除全部日股基準</button>
-      <button class="btn btn-sm" onclick="clearAllBasis()" style="border-color:var(--red);color:var(--red)">✕ 清除全部基準</button>
-    </div>
     <div class="tbl-wrap">
-      <table><thead><tr><th>代碼</th><th>名稱</th><th>市場</th><th>持倉量</th><th>均價</th><th>成本法</th><th>券商</th><th>基準日</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>代碼</th><th>名稱</th><th>市場</th><th>持倉量</th><th>均價</th><th>成本法</th><th>基準日</th><th>操作</th></tr></thead>
       <tbody id="basis-tbody"></tbody></table>
     </div>
   </div>
@@ -965,28 +957,23 @@ function mergeBasisItems(items, source) {
   for (const item of items) {
     if (!item.symbol || item.qty === 0) continue;
     const sym    = item.symbol.replace(/\xa0/g,'').trim();  // 標準化key
-    // 期權保留正負號（正=buy, 負=sell），其他取絕對值
-    const isOpt  = item.isOption || item.market === 'OPT';
-    const newQty = isOpt ? item.qty : Math.abs(item.qty);
+    const newQty = Math.abs(item.qty);
     const newCost= Math.abs(item.avgCost);
-    if (Math.abs(newQty) === 0 || newCost === 0) continue;
+    if (newQty === 0 || newCost === 0) continue;
     if (sym in basis) {
       const old = basis[sym];
-      // 期權同標的若方向相同才合併，否則分開（不應發生）
-      const oldQty = old.qty;
-      const absOld = Math.abs(oldQty), absNew = Math.abs(newQty);
-      const totalQty = isOpt ? (oldQty + newQty) : (absOld + absNew);
-      const absTotal = Math.abs(totalQty);
-      const weightAvg = absTotal > 0 ? (absOld*Math.abs(old.avgCost) + absNew*newCost) / absTotal : newCost;
+      const oldQty = Math.abs(old.qty);
+      const totalQty = oldQty + newQty;
+      const weightAvg = totalQty > 0 ? (oldQty*old.avgCost + newQty*newCost) / totalQty : newCost;
       old.qty        = totalQty;
       old.avgCost    = weightAvg;
-      old.totalCost  = absTotal * weightAvg;
+      old.totalCost  = totalQty * weightAvg;
       old.broker     = old.broker === source ? source : old.broker + '+' + source;
       old.basisDate  = basisDate;
       merged++;
     } else {
       basis[sym] = {
-        qty: newQty, avgCost: newCost, totalCost: Math.abs(newQty)*newCost,
+        qty: newQty, avgCost: newCost, totalCost: newQty*newCost,
         name: item.name || sym, market: item.market, broker: source,
         isOption: item.isOption || false, isBasis: true, basisDate,
         costMethod: (item.market === 'TW' || item.market === 'ESB') ? 'WAC' : 'FIFO'
@@ -1096,12 +1083,9 @@ function parseBasisFT(rows, filename) {
     if (c0.includes('總值') || (c0.includes('=') && c0.includes('$'))) { inSection = false; continue; }
     if (!inSection || !c0) continue;
     const qty     = parseFloat(r[1]) || 0;
-    let avgCost = parseFloat(r[11]) || 0;
+    const avgCost = parseFloat(r[11]) || 0;
     if (qty === 0 && avgCost === 0) continue;
     const isOpt = /\d{2}\/\d{2}\/\d{4}/.test(c0) || c0.split(' ').length > 2;
-    // Firstrade 期權的單位成本是每股價格，需 ×100 換算為每口合約成本
-    if (isOpt) avgCost = Math.abs(avgCost) * 100;
-    // 保留 qty 正負號：正=buy, 負=sell
     items.push({ symbol:c0, name:c0, qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
   }
   addBasisLog(`Firstrade：解析 ${items.length} 筆持倉（含期權）`);
@@ -1129,13 +1113,9 @@ function parseBasisSchwab(file) {
         if (assetType === 'Cash and Money Market') continue;
         const qty = parseFloat((r['Qty (Quantity)']||'').replace(/[,"]/g,'')) || 0;
         const totalCost = parseFloat((r['Cost Basis']||'').replace(/[$,"]/g,'')) || 0;
-        if (totalCost === 0 && qty === 0) continue;
+        if (totalCost === 0) continue;
+        const avgCost = qty !== 0 ? Math.abs(totalCost / qty) : 0;
         const isOpt = assetType === 'Option';
-        // Schwab: Cost Basis 是總成本（期權 sell 為負值）
-        // avgCost = 每口合約成本（取絕對值 / 口數絕對值）
-        const absQty = Math.abs(qty) || 1;
-        const avgCost = Math.abs(totalCost) / absQty;
-        // 保留 qty 正負號：正=buy, 負=sell
         items.push({ symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
           qty, avgCost, market:isOpt?'OPT':'US', isOption:isOpt });
       }
@@ -1296,36 +1276,49 @@ function parseSinopac(file) {
 // ══════════════════════════════════════════════════
 // MERGE NEW TRADES INTO PERSISTENT STORE
 // ══════════════════════════════════════════════════
+// 去重用 ID：不含券商名稱，手動新增和對帳單匯入的同筆交易會被判為重複
 function tradeId(t) {
   const sym = (t.symbol||'').replace(/\xa0/g,'').trim();
-  // 加入 amount 以區分同日同標的不同金額的股利
-  return `${t.date}|${sym}|${t.side}|${t.qty}|${t.amount||0}|${t.broker}`;
+  return `${t.date}|${sym}|${t.side}|${t.qty}|${Math.round((t.amount||0)*100)}`;
+}
+// 寬鬆比對：忽略金額差異，只比日期+代碼+方向+數量
+function tradeIdLoose(t) {
+  const sym = (t.symbol||'').replace(/\xa0/g,'').trim();
+  return `${t.date}|${sym}|${t.side}|${t.qty}`;
 }
 
 function mergeNewTrades(rawTrades, filename, broker) {
-  // 標準化所有 symbol（去除   等不可見字元）
   rawTrades = rawTrades.map(t => ({ ...t, symbol: (t.symbol||'').replace(/\xa0/g,'').trim() }));
-  const existingIds = new Set(trades.map(tradeId));
-  const newTrades = rawTrades.filter(t => !existingIds.has(tradeId(t)));
-  const skipped = rawTrades.length - newTrades.length;
 
-  addLog(`[${broker}] ${filename}：解析 ${rawTrades.length} 筆，新增 ${newTrades.length} 筆，跳過重複 ${skipped} 筆`, newTrades.length > 0 ? 'ok' : 'warn');
+  // 精確比對 + 寬鬆比對，雙重去重
+  const existingIds = new Set(trades.map(tradeId));
+  const existingLoose = new Set(trades.map(tradeIdLoose));
+
+  let exactSkip = 0, looseSkip = 0;
+  const newTrades = rawTrades.filter(t => {
+    if (existingIds.has(tradeId(t))) { exactSkip++; return false; }
+    if (existingLoose.has(tradeIdLoose(t))) { looseSkip++; return false; }
+    return true;
+  });
+
+  let logMsg = `[${broker}] ${filename}：解析 ${rawTrades.length} 筆，新增 ${newTrades.length} 筆`;
+  if (exactSkip > 0) logMsg += `，精確重複 ${exactSkip} 筆`;
+  if (looseSkip > 0) logMsg += `，模糊重複 ${looseSkip} 筆`;
+  addLog(logMsg, newTrades.length > 0 ? 'ok' : 'warn');
 
   if (newTrades.length === 0) {
     renderDashboard(); return;
   }
 
-  // append to persistent trades
   trades = [...trades, ...newTrades];
   save(KEYS.trades, trades);
 
-  // ── 現金帳戶連動 ──
+  // 現金帳戶連動
   settleCashForTrades(newTrades);
 
   // rebuild inventory & realized from ALL trades
   rebuildFromTrades();
 }
-
 // ══════════════════════════════════════════════════
 // CASH SETTLEMENT — 交易交割連動現金帳戶
 // ══════════════════════════════════════════════════
@@ -1512,37 +1505,13 @@ function deleteBasis(sym) {
   renderBasis();
 }
 
-function clearBasisByMarket(market) {
-  const labels = {OPT:'期權',US:'美股',TW:'台股',JP:'日股',CRYPTO:'加密貨幣'};
-  const basis = load(KEYS.basis) || {};
-  const targets = Object.entries(basis).filter(([,h]) => h.market === market);
-  if (targets.length === 0) { alert(`沒有${labels[market]||market}基準持倉`); return; }
-  if (!confirm(`確定清除全部 ${targets.length} 筆${labels[market]||market}基準持倉？`)) return;
-  for (const [sym] of targets) delete basis[sym];
-  save(KEYS.basis, basis);
-  rebuildFromTrades();
-  renderBasis();
-  addLog(`清除 ${targets.length} 筆${labels[market]}基準持倉`, 'warn');
-}
-
-function clearAllBasis() {
-  const basis = load(KEYS.basis) || {};
-  const count = Object.keys(basis).length;
-  if (count === 0) { alert('沒有基準持倉'); return; }
-  if (!confirm(`確定清除全部 ${count} 筆基準持倉？`)) return;
-  save(KEYS.basis, {});
-  rebuildFromTrades();
-  renderBasis();
-  addLog(`清除全部 ${count} 筆基準持倉`, 'warn');
-}
-
 function renderBasis() {
   const tbody = document.getElementById('basis-tbody');
   tbody.innerHTML = '';
   const basisStore = load(KEYS.basis) || {};
   const items = Object.entries(basisStore);
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">尚未設定基準持倉</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">尚未設定基準持倉</td></tr>';
     return;
   }
   for (const [sym,h] of items) {
@@ -1552,7 +1521,6 @@ function renderBasis() {
       <td>${h.qty.toFixed(h.qty%1===0?0:4)}</td>
       <td>${fmtPrice(h.avgCost,h.market)}</td>
       <td><span class="tag tag-basis">${h.costMethod}</span></td>
-      <td style="color:var(--muted);font-size:10px">${h.broker||'—'}</td>
       <td style="color:var(--muted)">${h.basisDate||'—'}</td>
       <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="deleteBasis('${sym}')">刪除</button></td>`;
     tbody.appendChild(tr);
@@ -2061,21 +2029,9 @@ function renderDashboard() {
     const p = prices[sym.replace(/\xa0/g,'').trim()] || prices[sym] || null;
     const costTWD = toTWD(h.totalCost, h.market);
     const valTWD  = p ? toTWD(p*h.qty, h.market) : costTWD;
-    // 期權處理：賣出(qty<0)的權利金收入不計入總市值（已在現金帳戶中）
-    // 買入(qty>0)的權利金支出以成本計入總市值
-    const isOptSell = h.market === 'OPT' && h.qty < 0;
-    const isOptBuy  = h.market === 'OPT' && h.qty > 0;
-    if (!isOptSell) {
-      if (isOptBuy) {
-        // 買入期權：以成本價計入（不用市價，因為期權報價不易取得）
-        totalCostTWD  += costTWD;
-        totalValueTWD += costTWD;
-      } else {
-        totalCostTWD  += costTWD;
-        totalValueTWD += valTWD;
-        totalUnrealTWD += valTWD - costTWD;
-      }
-    }
+    totalCostTWD  += costTWD;
+    totalValueTWD += valTWD;
+    totalUnrealTWD += valTWD - costTWD;
     return { sym, h, p, costTWD, valTWD, pnlTWD: valTWD-costTWD, pct:(valTWD-costTWD)/costTWD };
   }).sort((a,b)=>b.valTWD-a.valTWD);
 
@@ -2188,7 +2144,7 @@ function renderHoldings() {
   }
   function removeTd(sym) {
     const safe = sym.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    return `<td style="white-space:nowrap"><button class="btn btn-sm" onclick="editAvgCost('${safe}')" title="修改成本均價" style="margin-right:4px">✎</button><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">✕</button></td>`;
+    return `<td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">移除</button></td>`;
   }
   function srcTd(h) {
     const mktTag = h.market === 'ESB' ? ' <span class="tag" style="background:rgba(255,140,66,0.15);color:#ff8c42">興櫃</span>' : '';
@@ -2297,74 +2253,35 @@ function renderHoldings() {
   renderJPRows('holdings-tbody-jp',    jpStockRows, 'jp-summary',    '檔');
   renderJPRows('holdings-tbody-jpetf', jpEtfRows,   'jpetf-summary', '檔');
 
-  // 期權區 — 分類統計與渲染
+  // 期權區
   const tbOpt = document.getElementById('holdings-tbody-opt');
   if (tbOpt) {
     tbOpt.innerHTML = '';
-    // 統計
-    let buyCallPremium=0, buyPutPremium=0, sellCallPremium=0, sellPutPremium=0;
-    let buyCallCount=0, buyPutCount=0, sellCallCount=0, sellPutCount=0;
-
-    for (const {sym,h,p,costTWD} of optRows) {
-      const nameL = (h.name||sym).toLowerCase();
-      const symL = sym.toLowerCase();
-      const optType = nameL.includes('put')||symL.endsWith(' p')||/\.00 p$/i.test(sym) ? 'PUT'
-                    : nameL.includes('call')||symL.endsWith(' c')||/\.00 c$/i.test(sym) ? 'CALL' : '';
-      const isBuy = h.qty > 0;
-      const premiumUSD = Math.abs(h.totalCost);
-
-      if (isBuy && optType==='CALL')  { buyCallPremium+=premiumUSD; buyCallCount++; }
-      if (isBuy && optType==='PUT')   { buyPutPremium+=premiumUSD; buyPutCount++; }
-      if (!isBuy && optType==='CALL') { sellCallPremium+=premiumUSD; sellCallCount++; }
-      if (!isBuy && optType==='PUT')  { sellPutPremium+=premiumUSD; sellPutCount++; }
-
+    let optTotalPnl=0;
+    for (const {sym,h,p,valTWD,pnlTWD,pct} of optRows) {
+      if (pnlTWD !== null) optTotalPnl += pnlTWD;
+      const [pnlStr,pctStr] = pnlTd(pnlTWD, pct);
       const parts = sym.split(' ');
       const underlying = parts[0]||sym;
       const expiry = parts[1]||'';
       const strike = parts[2]||'';
+      const nameL = (h.name||sym).toLowerCase();
+      const optType = nameL.includes('put')||sym.toLowerCase().endsWith(' p')||/\.00 p$/i.test(sym) ? 'PUT'
+                    : nameL.includes('call')||sym.toLowerCase().endsWith(' c')||/\.00 c$/i.test(sym) ? 'CALL' : '';
       const optLabel = optType ? `<span class="tag" style="background:${optType==='PUT'?'rgba(255,77,109,0.15)':'rgba(0,229,160,0.15)'};color:${optType==='PUT'?'var(--red)':'var(--green)'}">${optType}</span>` : '';
-      const direction = isBuy ? '<span class="tag tag-buy">買入</span>' : '<span class="tag tag-sell">賣出</span>';
-      const premType = isBuy
-        ? '<span style="color:var(--red);font-size:10px">權利金支出</span>'
-        : '<span style="color:var(--green);font-size:10px">權利金收入</span>';
+      const direction = h.qty < 0 ? '<span class="tag tag-sell">賣出</span>' : '<span class="tag tag-buy">買入</span>';
       const tr=document.createElement('tr');
       tr.innerHTML=`<td class="sym" style="font-size:12px">${underlying} ${strike}<br><span style="font-size:9px;color:var(--muted)">${expiry}</span></td>
-        <td>${direction}</td>
-        <td>${optLabel} ${premType}</td>
+        <td>${direction} ${optLabel}</td>
         <td>${fmtQty(Math.abs(h.qty))} 口</td>
-        <td>$${h.avgCost.toFixed(2)}</td>
-        <td>$${premiumUSD.toFixed(2)}</td>
+        <td>${fmtPrice(h.avgCost,'US')}</td>
+        <td>${valTWD?'NT$'+Math.round(valTWD).toLocaleString():'—'}</td>
+        <td>${pnlStr}</td><td>${pctStr}</td>
         ${srcTd(h)}${removeTd(sym)}`;
       tbOpt.appendChild(tr);
     }
-
-    const totalPaid = buyCallPremium + buyPutPremium;
-    const totalReceived = sellCallPremium + sellPutPremium;
-
-    // 統計卡片
-    const statsEl = document.getElementById('opt-stats');
-    if (statsEl) {
-      statsEl.innerHTML = `
-        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:12px">
-          <div style="font-size:9px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px">權利金支出（計入總市值）</div>
-          <div style="font-size:18px;font-weight:700;font-family:'Syne',sans-serif;color:var(--red)">$${totalPaid.toFixed(2)}</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.8">
-            Buy Call：${buyCallCount} 口 · $${buyCallPremium.toFixed(2)}<br>
-            Buy Put：${buyPutCount} 口 · $${buyPutPremium.toFixed(2)}
-          </div>
-        </div>
-        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:12px">
-          <div style="font-size:9px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px">權利金收入（不計入總市值）</div>
-          <div style="font-size:18px;font-weight:700;font-family:'Syne',sans-serif;color:var(--green)">$${totalReceived.toFixed(2)}</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.8">
-            Sell Call：${sellCallCount} 口 · $${sellCallPremium.toFixed(2)}<br>
-            Sell Put：${sellPutCount} 口 · $${sellPutPremium.toFixed(2)}
-          </div>
-        </div>`;
-    }
-
     const optSum = document.getElementById('opt-summary');
-    if(optSum) optSum.textContent = `${optRows.length} 口 · 支出 $${totalPaid.toFixed(0)} · 收入 $${totalReceived.toFixed(0)}`;
+    if(optSum) optSum.textContent = `${optRows.length} 口 · 損益 ${optTotalPnl>=0?'+':''}NT$${Math.round(optTotalPnl).toLocaleString()}`;
   }
 }
 // 手動輸入現價（存入 prices 並重新渲染）
@@ -2388,40 +2305,6 @@ function removeHolding(sym) {
   trades = trades.filter(t => t.symbol !== sym);
   save(KEYS.trades, trades);
   rebuildFromTrades();
-  renderHoldings();
-}
-
-function editAvgCost(sym) {
-  const h = inventory[sym];
-  if (!h) { alert('找不到持倉：' + sym); return; }
-  const mkt = h.market;
-  const curLabel = mkt === 'TW' ? 'NT$' : mkt === 'JP' ? '¥' : '$';
-  const curCost = h.avgCost;
-
-  const input = prompt(
-    `修改 ${sym}（${h.name}）的成本均價\n\n` +
-    `目前均價：${curLabel}${curCost.toFixed(mkt==='JP'?0:4)}\n` +
-    `持倉量：${fmtQty(h.qty)}\n\n` +
-    `請輸入新的成本均價（${curLabel}）：`,
-    curCost.toFixed(mkt==='JP'?0:4)
-  );
-  if (input === null) return;
-  const newCost = parseFloat(input);
-  if (isNaN(newCost) || newCost <= 0) { alert('請輸入有效的正數'); return; }
-
-  inventory[sym].avgCost = newCost;
-  inventory[sym].totalCost = newCost * Math.abs(h.qty);
-  save(KEYS.inventory, inventory);
-
-  const basis = load(KEYS.basis) || {};
-  if (basis[sym]) {
-    basis[sym].avgCost = newCost;
-    basis[sym].totalCost = newCost * Math.abs(basis[sym].qty);
-    save(KEYS.basis, basis);
-  }
-
-  addLog(`手動修改 ${sym} 成本均價：${curLabel}${curCost.toFixed(4)} → ${curLabel}${newCost.toFixed(4)}`, 'warn');
-  renderDashboard();
   renderHoldings();
 }
 
