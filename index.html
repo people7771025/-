@@ -435,15 +435,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
     </div>
     <div class="field-row">
       <div class="field"><label>券商（對應現金帳戶交割）</label>
-        <select id="mt-broker" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
-          <option value="Schwab">嘉信證券（美股）</option>
-          <option value="FT">Firstrade 第一證券（美股）</option>
-          <option value="永豐">永豐金證券（台股）</option>
-          <option value="聯邦">聯邦證券（台股）</option>
-          <option value="統一">統一證券（台股）</option>
-          <option value="台新">台新複委託（日股）</option>
-          <option value="手動">其他（不連動現金）</option>
-        </select>
+        <select id="mt-broker" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%"></select>
       </div>
       <div class="field"><label>備註（選填）</label>
         <input id="mt-note" placeholder="如：定期定額、配息等" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
@@ -508,13 +500,22 @@ tbody td{padding:10px 12px;white-space:nowrap}
       <div class="field"><label>平均成本（每股，台股用 TWD，美股用 USD）</label><input id="b-cost" type="number" placeholder="850.00" /></div>
       <div class="field"><label>基準日期</label><input id="b-date" type="date" /></div>
     </div>
+    <div class="field-row"><div class="field"><label>券商來源（選填）</label><select id="b-broker"></select></div><div class="field"></div></div>
     <button class="btn btn-green" onclick="addBasis()">+ 加入庫存</button>
   </div>
 
   <div class="card">
     <div class="card-title">③ 目前基準持倉</div>
+    <div class="flex" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="clearBasisByMarket('OPT')" style="border-color:var(--red);color:var(--red)">✕ 期權</button>
+      <button class="btn btn-sm" onclick="clearBasisByMarket('US')" style="border-color:var(--red);color:var(--red)">✕ 美股</button>
+      <button class="btn btn-sm" onclick="clearBasisByMarket('TW')" style="border-color:var(--red);color:var(--red)">✕ 台股</button>
+      <button class="btn btn-sm" onclick="clearBasisByMarket('JP')" style="border-color:var(--red);color:var(--red)">✕ 日股</button>
+      <button class="btn btn-sm" onclick="clearBasisByMarket('CRYPTO')" style="border-color:var(--red);color:var(--red)">✕ 加密貨幣</button>
+      <button class="btn btn-sm" onclick="clearAllBasis()" style="border-color:var(--red);color:var(--red)">✕ 全部清除</button>
+    </div>
     <div class="tbl-wrap">
-      <table><thead><tr><th>代碼</th><th>名稱</th><th>市場</th><th>持倉量</th><th>均價</th><th>成本法</th><th>基準日</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>代碼</th><th>名稱</th><th>市場</th><th>持倉量</th><th>均價</th><th>成本法</th><th>券商</th><th>基準日</th><th>操作</th></tr></thead>
       <tbody id="basis-tbody"></tbody></table>
     </div>
   </div>
@@ -1498,6 +1499,7 @@ function addBasis() {
   const qty  = parseFloat(document.getElementById('b-qty').value) || 0;
   const cost = parseFloat(document.getElementById('b-cost').value) || 0;
   const date = document.getElementById('b-date').value || new Date().toISOString().slice(0,10);
+  const broker = document.getElementById('b-broker')?.value || '手動';
 
   if (!sym || qty <= 0 || cost <= 0) {
     alert('請填寫代碼、持倉量、均價'); return;
@@ -1508,7 +1510,7 @@ function addBasis() {
     symbol: sym, name: name || sym,
     qty, avgCost: cost, market: mkt,
     isOption: false, basisDate: date
-  }], '手動');
+  }], broker);
 
   // 覆寫 basisDate（mergeBasisItems 用 getBasisDate()，手動新增要用表單的日期）
   const basis = load(KEYS.basis) || {};
@@ -1527,13 +1529,35 @@ function deleteBasis(sym) {
   renderBasis();
 }
 
+function clearBasisByMarket(market) {
+  const labels = {OPT:'期權',US:'美股',TW:'台股',JP:'日股',CRYPTO:'加密貨幣'};
+  const basis = load(KEYS.basis) || {};
+  const targets = Object.entries(basis).filter(([,h]) => h.market === market);
+  if (targets.length === 0) { alert(`沒有${labels[market]||market}基準持倉`); return; }
+  if (!confirm(`確定清除 ${targets.length} 筆${labels[market]||market}基準持倉？`)) return;
+  for (const [sym] of targets) delete basis[sym];
+  save(KEYS.basis, basis);
+  rebuildFromTrades(); renderBasis();
+  addLog(`清除 ${targets.length} 筆${labels[market]||market}基準`, 'warn');
+}
+
+function clearAllBasis() {
+  const basis = load(KEYS.basis) || {};
+  const count = Object.keys(basis).length;
+  if (count === 0) { alert('沒有基準持倉'); return; }
+  if (!confirm(`確定清除全部 ${count} 筆基準持倉？`)) return;
+  save(KEYS.basis, {});
+  rebuildFromTrades(); renderBasis();
+  addLog(`清除全部 ${count} 筆基準`, 'warn');
+}
+
 function renderBasis() {
   const tbody = document.getElementById('basis-tbody');
   tbody.innerHTML = '';
   const basisStore = load(KEYS.basis) || {};
   const items = Object.entries(basisStore);
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">尚未設定基準持倉</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">尚未設定基準持倉</td></tr>';
     return;
   }
   for (const [sym,h] of items) {
@@ -1543,6 +1567,7 @@ function renderBasis() {
       <td>${h.qty.toFixed(h.qty%1===0?0:4)}</td>
       <td>${fmtPrice(h.avgCost,h.market)}</td>
       <td><span class="tag tag-basis">${h.costMethod}</span></td>
+      <td style="color:var(--muted);font-size:10px">${h.broker||'—'}</td>
       <td style="color:var(--muted)">${h.basisDate||'—'}</td>
       <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="deleteBasis('${sym}')">刪除</button></td>`;
     tbody.appendChild(tr);
@@ -2684,12 +2709,14 @@ function renderBrokerMap() {
 function updateBrokerMap(broker, account) {
   brokerMap[broker] = account;
   save(KEYS.brokerMap, brokerMap);
+  populateBrokerSelects();
 }
 
 function removeBrokerMap(broker) {
   delete brokerMap[broker];
   save(KEYS.brokerMap, brokerMap);
   renderBrokerMap();
+  populateBrokerSelects();
 }
 
 function addBrokerMapRow() {
@@ -2698,6 +2725,23 @@ function addBrokerMapRow() {
   brokerMap[broker.trim()] = '';
   save(KEYS.brokerMap, brokerMap);
   renderBrokerMap();
+}
+
+function populateBrokerSelects() {
+  const entries = Object.entries(brokerMap);
+  let html = '';
+  for (const [bk, acc] of entries) {
+    const label = acc ? `${bk}（→ ${acc}）` : bk;
+    html += `<option value="${bk}">${label}</option>`;
+  }
+  if (!brokerMap['手動']) html += '<option value="手動">其他（不連動現金）</option>';
+  ['mt-broker','b-broker'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const prev = el.value;
+    el.innerHTML = html;
+    if (prev) el.value = prev;
+  });
 }
 
 // ══════════════════════════════════════════════════
@@ -3029,6 +3073,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderDashboard();
   renderImportLog();
   updateStorageInfo();
+  populateBrokerSelects();
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('b-date').value = today;
   document.getElementById('basis-upload-date').value = today;
