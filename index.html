@@ -1207,25 +1207,54 @@ function parseFT(file) {
     const raw = [];
     for (const r of res.data) {
       const action = (r['Action']||'').trim().toUpperCase();
-      const sym = (r['Symbol']||'').trim();
-      if (!sym) continue;
-      const qty = Math.abs(parseFloat(r['Quantity'])||0);
+      let sym = (r['Symbol']||'').trim();
+      const desc = (r['Description']||'').trim();
+      const qty = parseFloat(r['Quantity'])||0;
       const price = parseFloat(r['Price'])||0;
       const amount = Math.abs(parseFloat(r['Amount'])||0);
       const fee = (parseFloat(r['Commission'])||0) + (parseFloat(r['Fee'])||0);
       const date = r['TradeDate']||'';
       const recType = (r['RecordType']||'').trim().toUpperCase();
-      // 股利（Firstrade RecordType=DIVIDEND 或 Action 含 DIVIDEND）
+
+      // FT 期權：Symbol 欄位為空，資訊在 Description 中
+      // 格式如 "CALL PLTR   03/20/26   135     PALANTIR..." 或 "PUT MP   01/15/27   32..."
+      let isOpt = false;
+      if (!sym && desc) {
+        const optMatch = desc.match(/^(CALL|PUT)\s+(\S+)\s+(\d{2}\/\d{2}\/\d{2,4})\s+([\d.]+)/);
+        if (optMatch) {
+          const optType = optMatch[1]; // CALL or PUT
+          const underlying = optMatch[2];
+          const expRaw = optMatch[3]; // 03/20/26
+          const strike = optMatch[4];
+          // 轉換日期格式 03/20/26 → 03/20/2026
+          const expParts = expRaw.split('/');
+          const expYear = expParts[2].length === 2 ? '20' + expParts[2] : expParts[2];
+          const expiry = `${expParts[0]}/${expParts[1]}/${expYear}`;
+          // 組成標準期權代碼：PLTR 03/20/2026 135.00 Call
+          sym = `${underlying} ${expiry} ${parseFloat(strike).toFixed(2)} ${optType.charAt(0).toUpperCase() + optType.slice(1).toLowerCase()}`;
+          isOpt = true;
+        }
+      }
+
+      if (!sym) continue;
+
+      // 股利
       if (recType === 'DIVIDEND' || action.includes('DIVIDEND') || action.includes('DIV')) {
-        raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+        raw.push({ date, symbol:sym, name:desc.substring(0,40),
           side:'DIVIDEND', qty:0, price:0, amount, fee,
           market:'US', broker:'FT', isOption:false, note:action });
         continue;
       }
       if (!['BUY','SELL'].includes(action)) continue;
-      raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
-        side:action==='BUY'?'BUY':'SELL', qty, price, amount, fee,
-        market:'US', broker:'FT', isOption:false });
+
+      // 期權：qty 保留正負號，amount 需 ×100（FT 期權 price 是每股價格）
+      const absQty = Math.abs(qty);
+      const optAmount = isOpt ? amount : amount;  // FT Amount 已是正確總額
+      const side = action === 'BUY' ? 'BUY' : 'SELL';
+
+      raw.push({ date, symbol:sym, name:desc.substring(0,40),
+        side, qty: isOpt ? qty : absQty, price, amount: optAmount, fee,
+        market: isOpt ? 'OPT' : 'US', broker:'FT', isOption:isOpt });
     }
     mergeNewTrades(raw, file.name, 'FT');
     setImportDone('ft', file.name);
