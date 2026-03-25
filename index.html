@@ -355,6 +355,23 @@ tbody td{padding:10px 12px;white-space:nowrap}
 <div class="page" id="page-realized">
   <div class="page-title">已實現損益</div>
   <div class="page-sub">由匯入交易計算（FIFO/加權平均），基準持倉賣出同樣計入</div>
+
+  <!-- 總損益統計 -->
+  <div id="realized-stats" style="margin-bottom:16px"></div>
+
+  <!-- 日期區間篩選 -->
+  <div class="flex" style="margin-bottom:16px;gap:8px;align-items:center;flex-wrap:wrap">
+    <label style="font-size:10px;color:var(--muted)">從</label>
+    <input type="date" id="realized-date-from" onchange="renderRealized()" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px">
+    <label style="font-size:10px;color:var(--muted)">到</label>
+    <input type="date" id="realized-date-to" onchange="renderRealized()" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px">
+    <button class="btn btn-sm" onclick="setRealizedRange('ytd')">今年</button>
+    <button class="btn btn-sm" onclick="setRealizedRange('all')">全部</button>
+    <button class="btn btn-sm" onclick="setRealizedRange('1m')">近1月</button>
+    <button class="btn btn-sm" onclick="setRealizedRange('3m')">近3月</button>
+    <span id="realized-count" style="font-size:11px;color:var(--muted)"></span>
+  </div>
+
   <div class="card">
     <div class="tbl-wrap">
       <table><thead><tr>
@@ -370,7 +387,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
 <div class="page" id="page-trades">
   <div class="page-title">交易紀錄</div>
   <div class="page-sub">所有匯入的交易紀錄，依市場分類，最新交易在最上方。可點「✎」記錄交易心得。</div>
-  <div class="flex" style="margin-bottom:16px;gap:8px">
+  <div class="flex" style="margin-bottom:10px;gap:8px;align-items:center;flex-wrap:wrap">
     <select id="trades-filter" onchange="renderTradesPage()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px">
       <option value="ALL">全部</option>
       <option value="US">美股個股</option>
@@ -382,6 +399,13 @@ tbody td{padding:10px 12px;white-space:nowrap}
       <option value="JP_ETF">日股 ETF</option>
       <option value="CRYPTO">加密貨幣</option>
     </select>
+    <label style="font-size:10px;color:var(--muted)">從</label>
+    <input type="date" id="trades-date-from" onchange="renderTradesPage()" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px">
+    <label style="font-size:10px;color:var(--muted)">到</label>
+    <input type="date" id="trades-date-to" onchange="renderTradesPage()" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px">
+    <button class="btn btn-sm" onclick="setTradesRange('ytd')">今年</button>
+    <button class="btn btn-sm" onclick="setTradesRange('all')">全部</button>
+    <button class="btn btn-sm" onclick="setTradesRange('1m')">近1月</button>
     <span id="trades-count" style="font-size:11px;color:var(--muted)"></span>
   </div>
   <div id="trades-sections"></div>
@@ -2715,15 +2739,70 @@ function editAvgCost(sym) {
 // ══════════════════════════════════════════════════
 // RENDER REALIZED
 // ══════════════════════════════════════════════════
+function setRealizedRange(preset) {
+  const from = document.getElementById('realized-date-from');
+  const to = document.getElementById('realized-date-to');
+  const now = new Date();
+  to.value = now.toISOString().slice(0,10);
+  if (preset === 'all') { from.value = ''; to.value = ''; }
+  else if (preset === 'ytd') { from.value = now.getFullYear() + '-01-01'; }
+  else if (preset === '1m') { const d = new Date(now); d.setMonth(d.getMonth()-1); from.value = d.toISOString().slice(0,10); }
+  else if (preset === '3m') { const d = new Date(now); d.setMonth(d.getMonth()-3); from.value = d.toISOString().slice(0,10); }
+  renderRealized();
+}
+
 function renderRealized() {
-  const tbody=document.getElementById('realized-tbody');
-  tbody.innerHTML='';
-  const sorted=[...realized].sort((a,b)=>b.sellDate.localeCompare(a.sellDate));
+  const tbody = document.getElementById('realized-tbody');
+  tbody.innerHTML = '';
+  const dateFrom = document.getElementById('realized-date-from')?.value || '';
+  const dateTo = document.getElementById('realized-date-to')?.value || '';
+
+  const filtered = realized.filter(r => {
+    if (dateFrom && r.sellDate < dateFrom) return false;
+    if (dateTo && r.sellDate > dateTo) return false;
+    return true;
+  });
+  const sorted = [...filtered].sort((a,b) => b.sellDate.localeCompare(a.sellDate));
+
+  // 統計
+  let totalPnlTWD = 0, gainCount = 0, lossCount = 0, gainTWD = 0, lossTWD = 0;
+  for (const r of filtered) {
+    const pnlTWD = toTWD(r.pnl, r.market);
+    totalPnlTWD += pnlTWD;
+    if (pnlTWD >= 0) { gainCount++; gainTWD += pnlTWD; }
+    else { lossCount++; lossTWD += pnlTWD; }
+  }
+
+  const statsEl = document.getElementById('realized-stats');
+  if (statsEl) {
+    const pc = totalPnlTWD >= 0 ? 'pos' : 'neg';
+    statsEl.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
+      <div class="stat-card" style="border-color:${totalPnlTWD>=0?'var(--green)':'var(--red)'}">
+        <div class="stat-label">區間總損益 (TWD)</div>
+        <div class="stat-value ${pc}">${(totalPnlTWD>=0?'+':'')+'NT$'+Math.round(totalPnlTWD).toLocaleString()}</div>
+        <div class="stat-sub">${filtered.length} 筆交易</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">獲利</div>
+        <div class="stat-value pos">+NT$${Math.round(gainTWD).toLocaleString()}</div>
+        <div class="stat-sub">${gainCount} 筆</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">虧損</div>
+        <div class="stat-value neg">${lossTWD<0?'':''}NT$${Math.round(lossTWD).toLocaleString()}</div>
+        <div class="stat-sub">${lossCount} 筆</div>
+      </div>
+    </div>`;
+  }
+
+  const countEl = document.getElementById('realized-count');
+  if (countEl) countEl.textContent = `${filtered.length} / ${realized.length} 筆`;
+
   for (const r of sorted) {
-    const tr=document.createElement('tr');
-    const pc=r.pnl>=0?'pos':'neg';
-    const pnlTWD=toTWD(r.pnl,r.market);
-    tr.innerHTML=`<td style="color:var(--muted)">${r.sellDate}</td>
+    const tr = document.createElement('tr');
+    const pc = r.pnl >= 0 ? 'pos' : 'neg';
+    const pnlTWD = toTWD(r.pnl, r.market);
+    tr.innerHTML = `<td style="color:var(--muted)">${r.sellDate}</td>
       <td class="sym">${r.symbol}</td>
       <td style="color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis">${r.name}</td>
       <td>${marketTag(r.market)}</td>
@@ -3404,12 +3483,31 @@ function editTradeNote(key) {
   renderTradesPage();
 }
 
+function setTradesRange(preset) {
+  const from = document.getElementById('trades-date-from');
+  const to = document.getElementById('trades-date-to');
+  const now = new Date();
+  to.value = now.toISOString().slice(0,10);
+  if (preset === 'all') { from.value = ''; to.value = ''; }
+  else if (preset === 'ytd') { from.value = now.getFullYear() + '-01-01'; }
+  else if (preset === '1m') { const d = new Date(now); d.setMonth(d.getMonth()-1); from.value = d.toISOString().slice(0,10); }
+  renderTradesPage();
+}
+
 function renderTradesPage() {
   const container = document.getElementById('trades-sections');
   if (!container) return;
   const filter = document.getElementById('trades-filter')?.value || 'ALL';
+  const dateFrom = document.getElementById('trades-date-from')?.value || '';
+  const dateTo = document.getElementById('trades-date-to')?.value || '';
 
-  const sorted = [...trades].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  const sorted = [...trades]
+    .filter(t => {
+      if (dateFrom && (t.date||'') < dateFrom) return false;
+      if (dateTo && (t.date||'') > dateTo) return false;
+      return true;
+    })
+    .sort((a,b) => (b.date||'').localeCompare(a.date||''));
 
   const catLabels = {
     US:'美股個股', US_ETF:'美股 ETF', OPT:'美股期權',
