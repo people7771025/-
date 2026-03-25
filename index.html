@@ -354,13 +354,13 @@ tbody td{padding:10px 12px;white-space:nowrap}
 <!-- ── REALIZED ── -->
 <div class="page" id="page-realized">
   <div class="page-title">已實現損益</div>
-  <div class="page-sub">由匯入交易計算（FIFO/加權平均），基準持倉賣出同樣計入</div>
+  <div class="page-sub">由匯入交易計算（FIFO/加權平均），依市場分類顯示</div>
 
-  <!-- 總損益統計 -->
-  <div id="realized-stats" style="margin-bottom:16px"></div>
+  <!-- 加總統計 -->
+  <div id="realized-total-stats" style="margin-bottom:16px"></div>
 
   <!-- 日期區間篩選 -->
-  <div class="flex" style="margin-bottom:16px;gap:8px;align-items:center;flex-wrap:wrap">
+  <div class="flex" style="margin-bottom:20px;gap:8px;align-items:center;flex-wrap:wrap">
     <label style="font-size:10px;color:var(--muted)">從</label>
     <input type="date" id="realized-date-from" onchange="renderRealized()" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px">
     <label style="font-size:10px;color:var(--muted)">到</label>
@@ -372,15 +372,8 @@ tbody td{padding:10px 12px;white-space:nowrap}
     <span id="realized-count" style="font-size:11px;color:var(--muted)"></span>
   </div>
 
-  <div class="card">
-    <div class="tbl-wrap">
-      <table><thead><tr>
-        <th>日期</th><th>代碼</th><th>名稱</th><th>市場</th>
-        <th>數量</th><th>成本</th><th>收入</th><th>損益(TWD)</th><th>報酬率</th><th>來源</th><th>備註</th>
-      </tr></thead>
-      <tbody id="realized-tbody"></tbody></table>
-    </div>
-  </div>
+  <!-- 各分類區塊 -->
+  <div id="realized-sections"></div>
 </div>
 
 <!-- ── TRADES ── -->
@@ -2752,8 +2745,6 @@ function setRealizedRange(preset) {
 }
 
 function renderRealized() {
-  const tbody = document.getElementById('realized-tbody');
-  tbody.innerHTML = '';
   const dateFrom = document.getElementById('realized-date-from')?.value || '';
   const dateTo = document.getElementById('realized-date-to')?.value || '';
 
@@ -2762,25 +2753,23 @@ function renderRealized() {
     if (dateTo && r.sellDate > dateTo) return false;
     return true;
   });
-  const sorted = [...filtered].sort((a,b) => b.sellDate.localeCompare(a.sellDate));
 
-  // 統計
+  // 加總統計
   let totalPnlTWD = 0, gainCount = 0, lossCount = 0, gainTWD = 0, lossTWD = 0;
   for (const r of filtered) {
-    const pnlTWD = toTWD(r.pnl, r.market);
-    totalPnlTWD += pnlTWD;
-    if (pnlTWD >= 0) { gainCount++; gainTWD += pnlTWD; }
-    else { lossCount++; lossTWD += pnlTWD; }
+    const p = toTWD(r.pnl, r.market);
+    totalPnlTWD += p;
+    if (p >= 0) { gainCount++; gainTWD += p; } else { lossCount++; lossTWD += p; }
   }
 
-  const statsEl = document.getElementById('realized-stats');
-  if (statsEl) {
+  const totalEl = document.getElementById('realized-total-stats');
+  if (totalEl) {
     const pc = totalPnlTWD >= 0 ? 'pos' : 'neg';
-    statsEl.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
+    totalEl.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
       <div class="stat-card" style="border-color:${totalPnlTWD>=0?'var(--green)':'var(--red)'}">
         <div class="stat-label">區間總損益 (TWD)</div>
         <div class="stat-value ${pc}">${(totalPnlTWD>=0?'+':'')+'NT$'+Math.round(totalPnlTWD).toLocaleString()}</div>
-        <div class="stat-sub">${filtered.length} 筆交易</div>
+        <div class="stat-sub">${filtered.length} 筆</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">獲利</div>
@@ -2789,7 +2778,7 @@ function renderRealized() {
       </div>
       <div class="stat-card">
         <div class="stat-label">虧損</div>
-        <div class="stat-value neg">${lossTWD<0?'':''}NT$${Math.round(lossTWD).toLocaleString()}</div>
+        <div class="stat-value neg">NT$${Math.round(lossTWD).toLocaleString()}</div>
         <div class="stat-sub">${lossCount} 筆</div>
       </div>
     </div>`;
@@ -2798,23 +2787,84 @@ function renderRealized() {
   const countEl = document.getElementById('realized-count');
   if (countEl) countEl.textContent = `${filtered.length} / ${realized.length} 筆`;
 
-  for (const r of sorted) {
-    const tr = document.createElement('tr');
-    const pc = r.pnl >= 0 ? 'pos' : 'neg';
-    const pnlTWD = toTWD(r.pnl, r.market);
-    tr.innerHTML = `<td style="color:var(--muted)">${r.sellDate}</td>
-      <td class="sym">${r.symbol}</td>
-      <td style="color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis">${r.name}</td>
-      <td>${marketTag(r.market)}</td>
-      <td>${fmtQty(r.qty)}</td>
-      <td>${fmtNum(r.cost,r.market)}</td>
-      <td>${fmtNum(r.proceeds,r.market)}</td>
-      <td class="${pc}">${(pnlTWD>=0?'+':'')+'NT$'+Math.round(pnlTWD).toLocaleString()}</td>
-      <td class="${pc}">${(r.pct*100).toFixed(2)}%</td>
-      <td style="color:var(--muted);font-size:10px">${r.broker}</td>
-      <td style="color:var(--muted);font-size:10px">${r.note||''}</td>`;
-    tbody.appendChild(tr);
+  // 分類
+  const catLabels = {US:'美股個股',US_ETF:'美股 ETF',OPT:'美股期權',TW:'台股個股',TW_ETF:'台股 ETF',JP:'日股個股',JP_ETF:'日股 ETF',CRYPTO:'加密貨幣'};
+  const catTags = {US:'tag-us',US_ETF:'tag-us',OPT:'tag-opt',TW:'tag-tw',TW_ETF:'tag-tw',JP:'tag-jp',JP_ETF:'tag-jp',CRYPTO:'tag-crypto'};
+  const catOrder = ['US','US_ETF','OPT','TW','TW_ETF','JP','JP_ETF','CRYPTO'];
+
+  function getRealizedCategory(r) {
+    if (r.market === 'OPT' || r.isOption) return 'OPT';
+    if (r.market === 'CRYPTO') return 'CRYPTO';
+    if (r.market === 'JP') return isJPETF(r.symbol) ? 'JP_ETF' : 'JP';
+    if (r.market === 'TW' || r.market === 'ESB') return isTWETF(r.symbol) ? 'TW_ETF' : 'TW';
+    return isUSETF(r.symbol) ? 'US_ETF' : 'US';
   }
+
+  const groups = {};
+  for (const r of filtered) {
+    const cat = getRealizedCategory(r);
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(r);
+  }
+
+  const container = document.getElementById('realized-sections');
+  if (!container) return;
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="card"><div style="text-align:center;padding:30px;color:var(--muted)">無已實現損益紀錄</div></div>';
+    return;
+  }
+
+  let html = '';
+  for (const cat of catOrder) {
+    const items = groups[cat];
+    if (!items || items.length === 0) continue;
+    const sorted = [...items].sort((a,b) => b.sellDate.localeCompare(a.sellDate));
+    const label = catLabels[cat] || cat;
+    const tagCls = catTags[cat] || 'tag-us';
+
+    // 分類統計
+    let catPnl = 0, catGain = 0, catLoss = 0;
+    for (const r of items) {
+      const p = toTWD(r.pnl, r.market);
+      catPnl += p;
+      if (p >= 0) catGain += p; else catLoss += p;
+    }
+    const catPc = catPnl >= 0 ? 'pos' : 'neg';
+
+    html += `<div class="card" style="margin-bottom:16px">
+      <div class="card-title" style="display:flex;align-items:center;gap:8px">
+        <span class="tag ${tagCls}" style="font-size:11px;padding:3px 8px">${label}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${items.length} 筆</span>
+      </div>
+      <div style="display:flex;gap:16px;margin-bottom:12px;font-size:12px;flex-wrap:wrap">
+        <span class="${catPc}" style="font-weight:700">損益 ${catPnl>=0?'+':''}NT$${Math.round(catPnl).toLocaleString()}</span>
+        <span style="color:var(--muted)">獲利 <span class="pos">+NT$${Math.round(catGain).toLocaleString()}</span></span>
+        <span style="color:var(--muted)">虧損 <span class="neg">NT$${Math.round(catLoss).toLocaleString()}</span></span>
+      </div>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th>日期</th><th>代碼</th><th>名稱</th><th>數量</th><th>成本</th><th>收入</th><th>損益(TWD)</th><th>報酬率</th><th>來源</th><th>備註</th>
+      </tr></thead><tbody>`;
+
+    for (const r of sorted) {
+      const pc = r.pnl >= 0 ? 'pos' : 'neg';
+      const pnlTWD = toTWD(r.pnl, r.market);
+      html += `<tr>
+        <td style="color:var(--muted);font-size:11px">${r.sellDate}</td>
+        <td class="sym" style="font-size:12px">${r.symbol}</td>
+        <td style="color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${r.name}</td>
+        <td>${fmtQty(r.qty)}</td>
+        <td>${fmtNum(r.cost,r.market)}</td>
+        <td>${fmtNum(r.proceeds,r.market)}</td>
+        <td class="${pc}">${(pnlTWD>=0?'+':'')+'NT$'+Math.round(pnlTWD).toLocaleString()}</td>
+        <td class="${pc}">${(r.pct*100).toFixed(2)}%</td>
+        <td style="color:var(--muted);font-size:10px">${r.broker}</td>
+        <td style="color:var(--muted);font-size:10px">${r.note||''}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div></div>';
+  }
+  container.innerHTML = html;
 }
 
 // ══════════════════════════════════════════════════
