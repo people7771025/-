@@ -164,6 +164,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
     <div class="nav-item active" onclick="gotoPage('dashboard')"><span class="nav-icon">◈</span>儀表板</div>
     <div class="nav-item" onclick="gotoPage('holdings')"><span class="nav-icon">▤</span>庫存持倉</div>
     <div class="nav-item" onclick="gotoPage('realized')"><span class="nav-icon">◎</span>已實現損益</div>
+    <div class="nav-item" onclick="gotoPage('trades')"><span class="nav-icon">☰</span>交易紀錄</div>
     <div class="nav-item" onclick="gotoPage('charts')"><span class="nav-icon">◫</span>圖表分析</div>
     <div class="nav-item" onclick="gotoPage('cash')"><span class="nav-icon">◆</span>現金管理</div>
     <div class="nav-section">資料管理</div>
@@ -363,6 +364,27 @@ tbody td{padding:10px 12px;white-space:nowrap}
       <tbody id="realized-tbody"></tbody></table>
     </div>
   </div>
+</div>
+
+<!-- ── TRADES ── -->
+<div class="page" id="page-trades">
+  <div class="page-title">交易紀錄</div>
+  <div class="page-sub">所有匯入的交易紀錄，依市場分類，最新交易在最上方。可點「✎」記錄交易心得。</div>
+  <div class="flex" style="margin-bottom:16px;gap:8px">
+    <select id="trades-filter" onchange="renderTradesPage()" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px">
+      <option value="ALL">全部</option>
+      <option value="US">美股個股</option>
+      <option value="US_ETF">美股 ETF</option>
+      <option value="OPT">美股期權</option>
+      <option value="TW">台股個股</option>
+      <option value="TW_ETF">台股 ETF</option>
+      <option value="JP">日股個股</option>
+      <option value="JP_ETF">日股 ETF</option>
+      <option value="CRYPTO">加密貨幣</option>
+    </select>
+    <span id="trades-count" style="font-size:11px;color:var(--muted)"></span>
+  </div>
+  <div id="trades-sections"></div>
 </div>
 
 <!-- ── CHARTS ── -->
@@ -745,7 +767,8 @@ const KEYS = {
   cash:      'ptv2_cash',       // 現金帳戶
   cashFx:    'ptv2_cashFx',     // 現金匯率
   brokerMap: 'ptv2_brokerMap',  // 券商→現金帳戶對應
-  cashLog:   'ptv2_cashLog'     // 現金異動紀錄
+  cashLog:   'ptv2_cashLog',    // 現金異動紀錄
+  tradeNotes:'ptv2_tradeNotes'  // 交易心得/備註
 };
 
 function load(k)   { try { return JSON.parse(localStorage.getItem(k)) || null } catch(e) { return null } }
@@ -769,7 +792,8 @@ let brokerMap = load(KEYS.brokerMap) || {
   '台新':         '台新日幣',
   '手動':         ''
 };
-let cashLog = load(KEYS.cashLog) || []; // [{date, account, currency, amount, type, desc}]
+let cashLog = load(KEYS.cashLog) || [];
+let tradeNotes = load(KEYS.tradeNotes) || {}; // tradeId → note string // [{date, account, currency, amount, type, desc}]
 
 // ══════════════════════════════════════════════════
 // NAVIGATION
@@ -779,9 +803,9 @@ function gotoPage(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-'+name)?.classList.add('active');
   closeMobileMenu();
-  const nameMap={dashboard:'儀表板',holdings:'庫存持倉',realized:'已實現損益',charts:'圖表分析',cash:'現金管理',import:'匯入交易',basis:'基準持倉',log:'匯入記錄',sync:'備份與同步'};
+  const nameMap={dashboard:'儀表板',holdings:'庫存持倉',realized:'已實現損益',trades:'交易紀錄',charts:'圖表分析',cash:'現金管理',import:'匯入交易',basis:'基準持倉',log:'匯入記錄',sync:'備份與同步'};
   const mp=document.getElementById('mobile-page-name'); if(mp) mp.textContent=nameMap[name]||name;
-  const navMap = {dashboard:0,holdings:1,realized:2,charts:3,cash:4,import:5,basis:6,log:7,sync:8};
+  const navMap = {dashboard:0,holdings:1,realized:2,trades:3,charts:4,cash:5,import:6,basis:7,log:8,sync:9};
   const items = document.querySelectorAll('.nav-item');
   if (navMap[name] !== undefined) items[navMap[name]]?.classList.add('active');
   if (name === 'charts') renderCharts();
@@ -789,6 +813,7 @@ function gotoPage(name) {
   if (name === 'realized') renderRealized();
   if (name === 'basis') renderBasis();
   if (name === 'cash') renderCash();
+  if (name === 'trades') renderTradesPage();
   if (name === 'log') renderFullLog();
   if (name === 'dashboard') renderDashboard();
 }
@@ -3174,6 +3199,121 @@ function clearAllData() {
   for (const key of Object.values(KEYS)) localStorage.removeItem(key);
   localStorage.removeItem('ptv2_gas_url');
   location.reload();
+}
+
+// ══════════════════════════════════════════════════
+// TRADES PAGE — 交易紀錄分類瀏覽 + 心得
+// ══════════════════════════════════════════════════
+function getTradeCategory(t) {
+  if (t.market === 'OPT' || t.isOption) return 'OPT';
+  if (t.market === 'CRYPTO') return 'CRYPTO';
+  if (t.market === 'JP') return isJPETF(t.symbol) ? 'JP_ETF' : 'JP';
+  if (t.market === 'TW' || t.market === 'ESB') return isTWETF(t.symbol) ? 'TW_ETF' : 'TW';
+  if (t.market === 'US') return isUSETF(t.symbol) ? 'US_ETF' : 'US';
+  return 'US';
+}
+
+function tradeNoteKey(t) {
+  return `${t.date}|${(t.symbol||'').replace(/\xa0/g,'').trim()}|${t.side}|${t.qty}`;
+}
+
+function saveTradeNote(key, val) {
+  tradeNotes[key] = val;
+  save(KEYS.tradeNotes, tradeNotes);
+}
+
+function editTradeNote(key) {
+  const current = tradeNotes[key] || '';
+  const note = prompt('交易心得 / 檢討：', current);
+  if (note === null) return;
+  saveTradeNote(key, note);
+  renderTradesPage();
+}
+
+function renderTradesPage() {
+  const container = document.getElementById('trades-sections');
+  if (!container) return;
+  const filter = document.getElementById('trades-filter')?.value || 'ALL';
+
+  const sorted = [...trades].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+
+  const catLabels = {
+    US:'美股個股', US_ETF:'美股 ETF', OPT:'美股期權',
+    TW:'台股個股', TW_ETF:'台股 ETF',
+    JP:'日股個股', JP_ETF:'日股 ETF',
+    CRYPTO:'加密貨幣'
+  };
+  const catTags = {
+    US:'tag-us', US_ETF:'tag-us', OPT:'tag-opt',
+    TW:'tag-tw', TW_ETF:'tag-tw',
+    JP:'tag-jp', JP_ETF:'tag-jp',
+    CRYPTO:'tag-crypto'
+  };
+
+  // Group by category
+  const groups = {};
+  for (const t of sorted) {
+    const cat = getTradeCategory(t);
+    if (filter !== 'ALL' && cat !== filter) continue;
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(t);
+  }
+
+  const totalFiltered = Object.values(groups).reduce((s,a) => s+a.length, 0);
+  const countEl = document.getElementById('trades-count');
+  if (countEl) countEl.textContent = `共 ${totalFiltered} 筆`;
+
+  if (totalFiltered === 0) {
+    container.innerHTML = '<div class="card"><div style="text-align:center;padding:30px;color:var(--muted)">無交易紀錄</div></div>';
+    return;
+  }
+
+  const catOrder = ['US','US_ETF','OPT','TW','TW_ETF','JP','JP_ETF','CRYPTO'];
+  let html = '';
+  for (const cat of catOrder) {
+    const items = groups[cat];
+    if (!items || items.length === 0) continue;
+    const label = catLabels[cat] || cat;
+    const tagCls = catTags[cat] || 'tag-us';
+
+    html += `<div class="card" style="margin-bottom:16px">
+      <div class="card-title" style="display:flex;align-items:center;gap:8px">
+        <span class="tag ${tagCls}" style="font-size:11px;padding:3px 8px">${label}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${items.length} 筆</span>
+      </div>
+      <div class="tbl-wrap"><table><thead><tr>
+        <th>日期</th><th>代碼</th><th>方向</th><th>數量</th><th>價格</th><th>金額</th><th>手續費</th><th>券商</th><th>心得</th><th></th>
+      </tr></thead><tbody>`;
+
+    for (const t of items) {
+      const key = tradeNoteKey(t);
+      const safeKey = key.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const note = tradeNotes[key] || '';
+      const sideTag = t.side === 'BUY' ? '<span class="tag tag-buy">買入</span>'
+                    : t.side === 'SELL' ? '<span class="tag tag-sell">賣出</span>'
+                    : t.side === 'DIVIDEND' ? '<span class="tag" style="background:var(--gold2);color:var(--gold)">股利</span>'
+                    : `<span class="tag">${t.side}</span>`;
+      const mkt = t.market || 'US';
+      const priceFmt = mkt==='TW'?'NT$'+(t.price||0).toFixed(2) : mkt==='JP'?'¥'+Math.round(t.price||0).toLocaleString() : '$'+(t.price||0).toFixed(2);
+      const amtFmt = mkt==='TW'?'NT$'+Math.round(t.amount||0).toLocaleString() : mkt==='JP'?'¥'+Math.round(t.amount||0).toLocaleString() : '$'+(t.amount||0).toFixed(2);
+      const feeFmt = (t.fee||0) > 0 ? (mkt==='TW'?'NT$'+Math.round(t.fee).toLocaleString():'$'+(t.fee).toFixed(2)) : '—';
+
+      html += `<tr>
+        <td style="color:var(--muted);font-size:11px;white-space:nowrap">${t.date||'—'}</td>
+        <td class="sym" style="font-size:12px">${t.symbol||'—'}</td>
+        <td>${sideTag}</td>
+        <td>${t.side==='DIVIDEND'?'—':Math.abs(t.qty||0)}</td>
+        <td>${t.side==='DIVIDEND'?'—':priceFmt}</td>
+        <td>${amtFmt}</td>
+        <td style="color:var(--muted);font-size:10px">${feeFmt}</td>
+        <td style="color:var(--muted);font-size:10px">${t.broker||'—'}</td>
+        <td style="max-width:200px;font-size:10px;color:${note?'var(--text)':'var(--dim)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${note||'點 ✎ 新增心得'}">${note||'—'}</td>
+        <td><button class="btn btn-sm" onclick="editTradeNote('${safeKey}')" title="編輯心得">✎</button></td>
+      </tr>`;
+    }
+    html += '</tbody></table></div></div>';
+  }
+  container.innerHTML = html;
 }
 
 // ══════════════════════════════════════════════════
