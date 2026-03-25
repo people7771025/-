@@ -1496,36 +1496,63 @@ function rebuildFromTrades() {
     if (!lots[sym]) lots[sym] = [];
 
     if (t.side === 'BUY') {
-      const costPerUnit = t.amount / (t.qty || 1);
-      if (t.market === 'TW') {
-        // 台股加權平均：合成單一 lot
-        const allLots = lots[sym];
-        const prevQty  = allLots.reduce((s, l) => s + l.qty, 0);
-        const prevCost = allLots.reduce((s, l) => s + l.qty * l.costPerUnit + l.fee, 0);
-        const newQty   = prevQty + t.qty;
-        const newCost  = prevCost + t.amount + t.fee;
-        lots[sym] = [{ qty: newQty, costPerUnit: newQty > 0 ? newCost / newQty : costPerUnit, fee: 0, date: t.date, isBasis: false }];
+      // 檢查是否為平倉（Buy to Close）：如果現有 lots 有負數 qty（sell option），BUY 是平倉
+      const existingQty = (lots[sym] || []).reduce((s, l) => s + l.qty, 0);
+      if (existingQty < -0.0001 && (t.market === 'OPT' || t.isOption)) {
+        // Buy to Close：平掉 sell option → 計算已實現損益
+        let remaining = Math.abs(t.qty);
+        let totalCost = 0;
+        while (remaining > 0.0001 && lots[sym] && lots[sym].length > 0) {
+          const lot = lots[sym][0];
+          const lotAbs = Math.abs(lot.qty);
+          const consume = Math.min(remaining, lotAbs);
+          totalCost += consume * lot.costPerUnit;
+          lot.qty = lot.qty + consume;  // 負數往 0 靠近
+          remaining -= consume;
+          if (Math.abs(lot.qty) < 0.0001) lots[sym].shift();
+        }
+        // sell option 已實現：收到的權利金(totalCost) - 買回花費(amount)
+        const buybackCost = Math.abs(t.amount) + (t.fee || 0);
+        const pnl = totalCost - buybackCost;
+        newRealized.push({
+          symbol: sym, name: t.name, market: t.market,
+          broker: t.broker, sellDate: t.date, qty: Math.abs(t.qty),
+          cost: buybackCost, proceeds: totalCost, pnl,
+          pct: buybackCost > 0 ? pnl / buybackCost : 0,
+          isOption: true
+        });
       } else {
-        lots[sym].push({ qty: t.qty, costPerUnit, fee: t.fee, date: t.date, isBasis: false });
+        const costPerUnit = Math.abs(t.amount) / (Math.abs(t.qty) || 1);
+        if (t.market === 'TW') {
+          const allLots = lots[sym];
+          const prevQty  = allLots.reduce((s, l) => s + l.qty, 0);
+          const prevCost = allLots.reduce((s, l) => s + l.qty * l.costPerUnit + l.fee, 0);
+          const newQty   = prevQty + Math.abs(t.qty);
+          const newCost  = prevCost + Math.abs(t.amount) + t.fee;
+          lots[sym] = [{ qty: newQty, costPerUnit: newQty > 0 ? newCost / newQty : costPerUnit, fee: 0, date: t.date, isBasis: false }];
+        } else {
+          lots[sym].push({ qty: Math.abs(t.qty), costPerUnit, fee: t.fee, date: t.date, isBasis: false });
+        }
       }
-    } else { // SELL
-      let remaining = t.qty;
+    } else { // SELL (or close position)
+      let remaining = Math.abs(t.qty);  // 期權 qty 可能是負數，用絕對值匹配
       let totalCost = 0;
       while (remaining > 0.0001 && lots[sym] && lots[sym].length > 0) {
         const lot = lots[sym][0];
-        const consume = Math.min(remaining, lot.qty);
-        const feeShare = lot.qty > 0 ? (consume / lot.qty) * lot.fee : 0;
+        const lotAbs = Math.abs(lot.qty);
+        const consume = Math.min(remaining, lotAbs);
+        const feeShare = lotAbs > 0 ? (consume / lotAbs) * lot.fee : 0;
         totalCost += consume * lot.costPerUnit + feeShare;
-        lot.qty   -= consume;
+        lot.qty = lot.qty > 0 ? lot.qty - consume : lot.qty + consume;  // 保持正負方向
         lot.fee   -= feeShare;
         remaining -= consume;
-        if (lot.qty < 0.0001) lots[sym].shift();
+        if (Math.abs(lot.qty) < 0.0001) lots[sym].shift();
       }
-      const proceeds = t.amount - t.fee;
+      const proceeds = Math.abs(t.amount) - (t.fee || 0);
       const pnl = proceeds - totalCost;
       newRealized.push({
         symbol: sym, name: t.name, market: t.market,
-        broker: t.broker, sellDate: t.date, qty: t.qty,
+        broker: t.broker, sellDate: t.date, qty: Math.abs(t.qty),
         cost: totalCost, proceeds, pnl,
         pct: totalCost > 0 ? pnl / totalCost : 0,
         isOption: t.isOption
