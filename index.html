@@ -418,7 +418,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
     <div class="import-icon" style="font-size:32px;opacity:0.5;margin-bottom:10px">↑</div>
     <div class="import-broker" style="font-size:13px;margin-bottom:6px">點擊上傳交易對帳單（可同時選多個）</div>
     <div class="import-hint" style="line-height:1.9;text-align:center">
-      Firstrade CSV &nbsp;·&nbsp; 嘉信 Schwab CSV &nbsp;·&nbsp; 永豐金 XLSX<br>
+      Firstrade CSV &nbsp;·&nbsp; 嘉信 Schwab CSV &nbsp;·&nbsp; 永豐金 XLSX &nbsp;·&nbsp; 統一證券 XLSX<br>
       系統自動偵測券商格式，無需分開上傳
     </div>
   </label>
@@ -839,7 +839,10 @@ function autoDetectAndParseImport(file) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
       const allText = rows.map(r => r.join('|')).join('\n');
-      if (allText.includes('成交日') && (allText.includes('買賣') || allText.includes('成交價'))) {
+      if (allText.includes('成交日期') && allText.includes('交易類別') && allText.includes('股票名稱')) {
+        addImportLog(`偵測到：統一證券交易對帳單（${file.name}）`);
+        parseUnifiedTradeFromRows(rows, file.name);
+      } else if (allText.includes('成交日') && (allText.includes('買賣') || allText.includes('成交價'))) {
         addImportLog(`偵測到：永豐金交易對帳單（${file.name}）`);
         parseSinopacFromRows(rows, file.name);
       } else {
@@ -1226,6 +1229,53 @@ function parseSinopacFromRows(rows, filename) {
   addImportLog(`永豐金：解析 ${raw.length} 筆交易`);
 }
 
+// ── 統一證券交易對帳單 ──
+function parseUnifiedTradeFromRows(rows, filename) {
+  // 找 header 行：成交日期 | 交易類別 | 股票名稱 | 成交股數 | 成交單價 | 成交價金 | 手續費 | 交易稅
+  let hi = -1;
+  for (let i=0; i<rows.length; i++) {
+    const rowStr = rows[i].map(v => String(v||'')).join('|');
+    if (rowStr.includes('成交日期') && rowStr.includes('交易類別')) { hi = i; break; }
+  }
+  if (hi < 0) { addImportLog('統一證券交易：找不到 header 行', 'err'); return; }
+  const h = rows[hi].map(v => String(v||'').trim());
+  const iDate = h.findIndex(v => v.includes('成交日期'));
+  const iType = h.findIndex(v => v.includes('交易類別'));
+  const iName = h.findIndex(v => v.includes('股票名稱'));
+  const iQty  = h.findIndex(v => v.includes('成交股數'));
+  const iPrice= h.findIndex(v => v.includes('成交單價'));
+  const iAmt  = h.findIndex(v => v.includes('成交價金'));
+  const iFee  = h.findIndex(v => v.includes('手續費'));
+  const iTax  = h.findIndex(v => v.includes('交易稅'));
+
+  const raw = [];
+  for (let i = hi+1; i < rows.length; i++) {
+    const r = rows[i];
+    const dateRaw = String(r[iDate]||'').trim();
+    if (!dateRaw || dateRaw === '合計' || !dateRaw.includes('/')) continue;
+    const date = dateRaw.replace(/\//g, '-');
+    const typeRaw = String(r[iType]||'').trim();
+    const isBuy = typeRaw.includes('買進') || typeRaw.includes('買入');
+    const isSell = typeRaw.includes('賣出');
+    if (!isBuy && !isSell) continue;
+    const nameRaw = String(r[iName]||'').trim();
+    // 股票名稱格式：台虹(8039) → 取代碼
+    const codeMatch = nameRaw.match(/\((\d+)\)/);
+    const sym = codeMatch ? codeMatch[1] : nameRaw;
+    const name = nameRaw.replace(/\(\d+\)/, '').trim();
+    const qty = Math.abs(parseFloat(String(r[iQty]||'').replace(/,/g,'')) || 0);
+    const price = parseFloat(r[iPrice]) || 0;
+    const amount = Math.abs(parseFloat(String(r[iAmt]||'').replace(/,/g,'')) || 0);
+    const fee = (parseFloat(String(r[iFee]||'').replace(/,/g,'')) || 0)
+              + (parseFloat(String(r[iTax]||'').replace(/,/g,'')) || 0);
+    if (qty <= 0) continue;
+    raw.push({ date, symbol:sym, name, side:isBuy?'BUY':'SELL', qty, price,
+      amount, fee, market:'TW', broker:'統一', isOption:false });
+  }
+  addImportLog(`統一證券：解析 ${raw.length} 筆交易`);
+  mergeNewTrades(raw, filename, '統一');
+}
+
 // ── FT Firstrade ──
 function parseFT(file) {
   Papa.parse(file, { header:true, skipEmptyLines:true, complete(res) {
@@ -1290,15 +1340,17 @@ function parseFT(file) {
 function parseSchwab(file) {
   Papa.parse(file, { header:true, skipEmptyLines:true, complete(res) {
     const BUY  = new Set(['Buy','Buy to Open','Buy to Close','Reinvest Shares']);
-    const SELL = new Set(['Sell','Sell to Open','Sell to Close','Expired','Exchange or Exercise']);
+    const SELL = new Set(['Sell','Sell to Open','Sell to Close','Exchange or Exercise']);
+    const EXPIRED = new Set(['Expired']);
     const DIV  = new Set(['Cash Dividend','Qualified Dividend','Non-Qualified Div','Pr Yr Cash Div']);
     const raw = [];
     for (const r of res.data) {
       const action = (r['Action']||'').trim();
       const isBuy  = BUY.has(action), isSell = SELL.has(action);
       const isDiv  = DIV.has(action);
+      const isExpired = EXPIRED.has(action);
       const isReinvest = action === 'Reinvest Shares';
-      if (!isBuy && !isSell && !isDiv) continue;
+      if (!isBuy && !isSell && !isDiv && !isExpired) continue;
       const sym = (r['Symbol']||'').trim();
       if (!sym) continue;
       const isOpt = sym.split(' ').length > 1;
@@ -1321,6 +1373,15 @@ function parseSchwab(file) {
         raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
           side:'BUY', qty, price, amount, fee,
           market:isOpt?'OPT':'US', broker:'Schwab', isOption:isOpt, note:'Reinvest(買入)' });
+      } else if (isExpired) {
+        // 期權到期：生成 "以 $0 平倉" 的交易
+        // sell option 到期 = Buy to Close at $0 (全額獲利)
+        // buy option 到期 = Sell to Close at $0 (全額虧損)  
+        const isOptExp = sym.split(' ').length > 1;
+        const expQty = Math.abs(qty) || 1;
+        raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
+          side: qty < 0 ? 'BUY' : 'SELL', qty: expQty, price:0, amount:0, fee:0,
+          market:'OPT', broker:'Schwab', isOption:true, note:'Expired' });
       } else {
         raw.push({ date, symbol:sym, name:(r['Description']||sym).trim().substring(0,40),
           side:isBuy?'BUY':'SELL', qty, price, amount, fee,
@@ -1534,29 +1595,39 @@ function rebuildFromTrades() {
           lots[sym].push({ qty: Math.abs(t.qty), costPerUnit, fee: t.fee, date: t.date, isBasis: false });
         }
       }
-    } else { // SELL (or close position)
-      let remaining = Math.abs(t.qty);  // 期權 qty 可能是負數，用絕對值匹配
-      let totalCost = 0;
-      while (remaining > 0.0001 && lots[sym] && lots[sym].length > 0) {
-        const lot = lots[sym][0];
-        const lotAbs = Math.abs(lot.qty);
-        const consume = Math.min(remaining, lotAbs);
-        const feeShare = lotAbs > 0 ? (consume / lotAbs) * lot.fee : 0;
-        totalCost += consume * lot.costPerUnit + feeShare;
-        lot.qty = lot.qty > 0 ? lot.qty - consume : lot.qty + consume;  // 保持正負方向
-        lot.fee   -= feeShare;
-        remaining -= consume;
-        if (Math.abs(lot.qty) < 0.0001) lots[sym].shift();
+    } else { // SELL
+      const isOpt = t.market === 'OPT' || t.isOption;
+      const existingQty = (lots[sym] || []).reduce((s, l) => s + l.qty, 0);
+
+      if (isOpt && existingQty < 0.0001) {
+        // Sell to Open (STO)：無正向持倉 → 新建 sell option 部位（負數 lot）
+        const costPerUnit = Math.abs(t.amount) / (Math.abs(t.qty) || 1);
+        lots[sym].push({ qty: -(Math.abs(t.qty)), costPerUnit, fee: t.fee||0, date: t.date, isBasis: false });
+      } else {
+        // Sell to Close (STC) 或一般股票賣出：消耗現有 lots
+        let remaining = Math.abs(t.qty);
+        let totalCost = 0;
+        while (remaining > 0.0001 && lots[sym] && lots[sym].length > 0) {
+          const lot = lots[sym][0];
+          const lotAbs = Math.abs(lot.qty);
+          const consume = Math.min(remaining, lotAbs);
+          const feeShare = lotAbs > 0 ? (consume / lotAbs) * lot.fee : 0;
+          totalCost += consume * lot.costPerUnit + feeShare;
+          lot.qty = lot.qty > 0 ? lot.qty - consume : lot.qty + consume;
+          lot.fee -= feeShare;
+          remaining -= consume;
+          if (Math.abs(lot.qty) < 0.0001) lots[sym].shift();
+        }
+        const proceeds = Math.abs(t.amount) - (t.fee || 0);
+        const pnl = proceeds - totalCost;
+        newRealized.push({
+          symbol: sym, name: t.name, market: t.market,
+          broker: t.broker, sellDate: t.date, qty: Math.abs(t.qty),
+          cost: totalCost, proceeds, pnl,
+          pct: totalCost > 0 ? pnl / totalCost : 0,
+          isOption: t.isOption
+        });
       }
-      const proceeds = Math.abs(t.amount) - (t.fee || 0);
-      const pnl = proceeds - totalCost;
-      newRealized.push({
-        symbol: sym, name: t.name, market: t.market,
-        broker: t.broker, sellDate: t.date, qty: Math.abs(t.qty),
-        cost: totalCost, proceeds, pnl,
-        pct: totalCost > 0 ? pnl / totalCost : 0,
-        isOption: t.isOption
-      });
     }
   }
 
