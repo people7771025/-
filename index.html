@@ -358,8 +358,8 @@ tbody td{padding:10px 12px;white-space:nowrap}
   <div class="card">
     <div class="tbl-wrap">
       <table><thead><tr>
-        <th>賣出日期</th><th>代碼</th><th>名稱</th><th>市場</th>
-        <th>賣出量</th><th>成本</th><th>賣出金額</th><th>損益(TWD)</th><th>報酬率</th><th>來源</th>
+        <th>日期</th><th>代碼</th><th>名稱</th><th>市場</th>
+        <th>數量</th><th>成本</th><th>收入</th><th>損益(TWD)</th><th>報酬率</th><th>來源</th><th>備註</th>
       </tr></thead>
       <tbody id="realized-tbody"></tbody></table>
     </div>
@@ -1657,6 +1657,38 @@ function rebuildFromTrades() {
     };
   }
 
+  // Step4：自動偵測已到期的期權 → 從庫存移到已實現
+  const today = new Date().toISOString().slice(0,10);
+  for (const [sym, h] of Object.entries(newInventory)) {
+    if (h.market !== 'OPT') continue;
+    // 從 symbol 解析到期日：格式如 "PLTR 03/20/2026 145.00 P" 或 "PLTR 03/20/2026 145.00 Call"
+    const expMatch = sym.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if (!expMatch) continue;
+    const expDate = `${expMatch[3]}-${expMatch[1]}-${expMatch[2]}`;
+    if (expDate >= today) continue; // 尚未到期
+    // 已到期：生成已實現損益
+    const isSell = h.qty < 0;
+    const premium = Math.abs(h.totalCost);
+    if (isSell) {
+      // sell option 到期 = 全額獲利（權利金收入）
+      newRealized.push({
+        symbol: sym, name: h.name, market: 'OPT',
+        broker: h.broker, sellDate: expDate, qty: Math.abs(h.qty),
+        cost: 0, proceeds: premium, pnl: premium,
+        pct: 0, isOption: true, note: '到期（Sell方全額獲利）'
+      });
+    } else {
+      // buy option 到期 = 全額虧損
+      newRealized.push({
+        symbol: sym, name: h.name, market: 'OPT',
+        broker: h.broker, sellDate: expDate, qty: Math.abs(h.qty),
+        cost: premium, proceeds: 0, pnl: -premium,
+        pct: -1, isOption: true, note: '到期（Buy方全額虧損）'
+      });
+    }
+    delete newInventory[sym]; // 從庫存移除
+  }
+
   inventory = newInventory;
   realized  = newRealized;
   save(KEYS.inventory, inventory);
@@ -2552,6 +2584,7 @@ function renderHoldings() {
       const premType = isBuy
         ? '<span style="color:var(--red);font-size:10px">權利金支出</span>'
         : '<span style="color:var(--green);font-size:10px">權利金收入</span>';
+      const safeSym = sym.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
       const tr=document.createElement('tr');
       tr.innerHTML=`<td class="sym" style="font-size:12px">${underlying} ${strike}<br><span style="font-size:9px;color:var(--muted)">${expiry}</span></td>
         <td>${direction}</td>
@@ -2559,7 +2592,12 @@ function renderHoldings() {
         <td>${fmtQty(Math.abs(h.qty))} 口</td>
         <td>$${h.avgCost.toFixed(2)}</td>
         <td>$${premiumUSD.toFixed(2)}</td>
-        ${srcTd(h)}${removeTd(sym)}`;
+        ${srcTd(h)}
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm" onclick="editAvgCost('${safeSym}')" title="修改成本" style="margin-right:3px">✎</button>
+          <button class="btn btn-sm" onclick="markOptionExpired('${safeSym}')" title="標記到期" style="margin-right:3px;border-color:var(--gold);color:var(--gold)">⏰</button>
+          <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safeSym}')">✕</button>
+        </td>`;
       tbOpt.appendChild(tr);
     }
 
@@ -2616,6 +2654,43 @@ function removeHolding(sym) {
   renderHoldings();
 }
 
+function markOptionExpired(sym) {
+  const h = inventory[sym];
+  if (!h) { alert('找不到持倉：' + sym); return; }
+  const isSell = h.qty < 0;
+  const premium = Math.abs(h.totalCost);
+  const label = isSell ? `Sell 方到期 → 全額獲利 $${premium.toFixed(2)}` : `Buy 方到期 → 全額虧損 -$${premium.toFixed(2)}`;
+  if (!confirm(`確定將 ${sym} 標記為到期？\n\n${label}\n\n此操作會將此期權從庫存移到已實現損益。`)) return;
+
+  const expMatch = sym.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  const expDate = expMatch ? `${expMatch[3]}-${expMatch[1]}-${expMatch[2]}` : new Date().toISOString().slice(0,10);
+
+  if (isSell) {
+    realized.push({
+      symbol: sym, name: h.name, market: 'OPT',
+      broker: h.broker, sellDate: expDate, qty: Math.abs(h.qty),
+      cost: 0, proceeds: premium, pnl: premium,
+      pct: 0, isOption: true, note: '手動標記到期'
+    });
+  } else {
+    realized.push({
+      symbol: sym, name: h.name, market: 'OPT',
+      broker: h.broker, sellDate: expDate, qty: Math.abs(h.qty),
+      cost: premium, proceeds: 0, pnl: -premium,
+      pct: -1, isOption: true, note: '手動標記到期'
+    });
+  }
+  // 從庫存和基準中移除
+  delete inventory[sym];
+  save(KEYS.inventory, inventory);
+  const basis = load(KEYS.basis) || {};
+  if (basis[sym]) { delete basis[sym]; save(KEYS.basis, basis); }
+  save(KEYS.realized, realized);
+  addLog(`期權到期：${sym} ${isSell?'Sell方獲利':'Buy方虧損'} $${premium.toFixed(2)}`, isSell?'ok':'warn');
+  renderDashboard();
+  renderHoldings();
+}
+
 function editAvgCost(sym) {
   const h = inventory[sym];
   if (!h) { alert('找不到持倉：' + sym); return; }
@@ -2657,7 +2732,8 @@ function renderRealized() {
       <td>${fmtNum(r.proceeds,r.market)}</td>
       <td class="${pc}">${(pnlTWD>=0?'+':'')+'NT$'+Math.round(pnlTWD).toLocaleString()}</td>
       <td class="${pc}">${(r.pct*100).toFixed(2)}%</td>
-      <td style="color:var(--muted);font-size:10px">${r.broker}</td>`;
+      <td style="color:var(--muted);font-size:10px">${r.broker}</td>
+      <td style="color:var(--muted);font-size:10px">${r.note||''}</td>`;
     tbody.appendChild(tr);
   }
 }
@@ -3387,7 +3463,9 @@ function renderTradesPage() {
       const key = tradeNoteKey(t);
       const safeKey = key.replace(/'/g,"\\'").replace(/"/g,'&quot;');
       const note = tradeNotes[key] || '';
-      const sideTag = t.side === 'BUY' ? '<span class="tag tag-buy">買入</span>'
+      const isExpiredNote = (t.note||'').includes('Expired') || (t.note||'').includes('到期');
+      const sideTag = isExpiredNote ? '<span class="tag" style="background:rgba(255,209,102,0.15);color:var(--gold)">到期</span>'
+                    : t.side === 'BUY' ? '<span class="tag tag-buy">買入</span>'
                     : t.side === 'SELL' ? '<span class="tag tag-sell">賣出</span>'
                     : t.side === 'DIVIDEND' ? '<span class="tag" style="background:var(--gold2);color:var(--gold)">股利</span>'
                     : `<span class="tag">${t.side}</span>`;
