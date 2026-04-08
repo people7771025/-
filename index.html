@@ -1952,7 +1952,8 @@ async function refreshPrices() {
     const ts = new Date().toLocaleTimeString('zh-TW');
     const fxMsg = fxUpdated > 0 ? ` · ${fxUpdated}組匯率` : '';
     setPriceStatus(`已更新 ${ts}（${fetched}/${gasSymbols.length} 筆${fxMsg}）`, 'var(--green)');
-    // 偵測台股中未取得報價的標的 → 可能是興櫃，標記為 ESB 下次用 ESB: 抓取
+    // 偵測台股中未取得報價的標的 → 可能是興櫃，自動改為 ESB 並立即補抓
+    const newEsbSyms = [];
     for (const s of twSyms) {
       if (!prices[s]) {
         const invKey = Object.keys(inventory).find(k => cleanSym(k) === s);
@@ -1961,8 +1962,26 @@ async function refreshPrices() {
           save(KEYS.inventory, inventory);
           const basis = load(KEYS.basis) || {};
           if (basis[invKey]) { basis[invKey].market = 'ESB'; save(KEYS.basis, basis); }
+          newEsbSyms.push(s);
           addLog(`${s} 無法以 TPE 取得報價，已自動改為興櫃(ESB)`, 'warn');
         }
+      }
+    }
+    // 立即補抓新偵測到的興櫃報價（不需手動點第二次）
+    if (newEsbSyms.length > 0) {
+      try {
+        const esbUrl = `${GAS_URL}?symbols=${encodeURIComponent(newEsbSyms.map(s=>'ESB:'+s).join(','))}`;
+        const esbR = await fetchWithTimeout(esbUrl, { mode:'cors' }, 30000);
+        const esbData = await esbR.json();
+        for (const [sym, price] of Object.entries(esbData.prices || {})) {
+          if (!price || price <= 0) continue;
+          if (sym.startsWith('ESB:')) prices[sym.replace('ESB:','')] = price;
+          else prices[sym] = price;
+          fetched++;
+        }
+        addLog(`興櫃補抓：${newEsbSyms.join(',')} 完成`, 'ok');
+      } catch(ex) {
+        addLog(`興櫃補抓失敗：${ex.message}`, 'err');
       }
     }
     save(KEYS.prices, prices);
