@@ -1604,7 +1604,7 @@ function rebuildFromTrades() {
           symbol: sym, name: t.name, market: t.market,
           broker: t.broker, sellDate: t.date, qty: Math.abs(t.qty),
           cost: buybackCost, proceeds: totalCost, pnl,
-          pct: buybackCost > 0 ? pnl / buybackCost : 0,
+          pct: totalCost > 0 ? pnl / totalCost : 0,
           isOption: true
         });
       } else {
@@ -1700,7 +1700,7 @@ function rebuildFromTrades() {
         symbol: sym, name: h.name, market: 'OPT',
         broker: h.broker, sellDate: expDate, qty: Math.abs(h.qty),
         cost: 0, proceeds: premium, pnl: premium,
-        pct: 0, isOption: true, note: '到期（Sell方全額獲利）'
+        pct: 1, isOption: true, note: '到期（Sell方全額獲利）'
       });
     } else {
       // buy option 到期 = 全額虧損
@@ -2727,7 +2727,7 @@ function markOptionExpired(sym) {
       symbol: sym, name: h.name, market: 'OPT',
       broker: h.broker, sellDate: expDate, qty: Math.abs(h.qty),
       cost: 0, proceeds: premium, pnl: premium,
-      pct: 0, isOption: true, note: '手動標記到期'
+      pct: 1, isOption: true, note: '手動標記到期'
     });
   } else {
     realized.push({
