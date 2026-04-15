@@ -464,7 +464,7 @@ tbody td{padding:10px 12px;white-space:nowrap}
     </div>
     <div class="field-row">
       <div class="field"><label>市場</label>
-        <select id="mt-market" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+        <select id="mt-market" onchange="onMtMarketChange()" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
           <option value="TW">🇹🇼 TW 台股（加權平均）</option>
           <option value="ESB">🇹🇼 ESB 興櫃（加權平均）</option>
           <option value="US">🇺🇸 US 美股（FIFO）</option>
@@ -491,11 +491,24 @@ tbody td{padding:10px 12px;white-space:nowrap}
       </div>
     </div>
     <div class="field-row">
-      <div class="field"><label>成交價 / 股利金額（每股或總額）</label>
+      <div class="field" id="mt-price-wrap"><label>成交價 / 股利金額（每股或總額）</label>
         <input id="mt-price" type="number" placeholder="850.00" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
       </div>
       <div class="field"><label>手續費（含交易稅，原幣）</label>
         <input id="mt-fee" type="number" placeholder="0" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+    </div>
+    <!-- CRYPTO 專屬：填台幣牌價 + 當日匯率 -->
+    <div class="field-row" id="mt-crypto-row" style="display:none">
+      <div class="field"><label>當日 BTC 價格（TWD/顆，抄幣託「兌換匯率」）</label>
+        <input id="mt-crypto-twd-price" type="number" placeholder="3200000" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;width:100%">
+      </div>
+      <div class="field"><label>當日 USD/TWD 匯率</label>
+        <div class="flex" style="gap:6px">
+          <input id="mt-crypto-fx" type="number" placeholder="32.00" min="0" step="any" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;flex:1">
+          <button type="button" class="btn btn-sm" onclick="fetchFxForCryptoTrade()" style="white-space:nowrap">🔄 查當日</button>
+        </div>
+        <div id="mt-crypto-fx-status" style="font-size:10px;color:var(--muted);margin-top:4px"></div>
       </div>
     </div>
     <div class="field-row">
@@ -914,6 +927,40 @@ function setImportDone(key, filename) {
 // ══════════════════════════════════════════════════
 // 手動新增交易
 // ══════════════════════════════════════════════════
+function onMtMarketChange() {
+  const mk = document.getElementById('mt-market').value;
+  const isCrypto = mk === 'CRYPTO';
+  document.getElementById('mt-price-wrap').style.display = isCrypto ? 'none' : '';
+  document.getElementById('mt-crypto-row').style.display = isCrypto ? '' : 'none';
+}
+
+// 抓指定日期 USD/TWD（exchangerate.host 免 key）
+async function fetchHistoricalUsdTwd(date) {
+  const url = `https://api.exchangerate.host/${date}?base=USD&symbols=TWD`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = await r.json();
+  const fx = j && j.rates && j.rates.TWD;
+  if (!fx || fx <= 0) throw new Error('rates.TWD 缺失');
+  return fx;
+}
+
+async function fetchFxForCryptoTrade() {
+  const date = document.getElementById('mt-date').value;
+  const statusEl = document.getElementById('mt-crypto-fx-status');
+  if (!date) { statusEl.style.color='var(--red)'; statusEl.textContent='請先填交易日期'; return; }
+  statusEl.style.color='var(--muted)'; statusEl.textContent='查詢中…';
+  try {
+    const fx = await fetchHistoricalUsdTwd(date);
+    document.getElementById('mt-crypto-fx').value = fx.toFixed(4);
+    statusEl.style.color='var(--green)';
+    statusEl.textContent = `已填入 ${date} USD/TWD = ${fx.toFixed(4)}`;
+  } catch (e) {
+    statusEl.style.color='var(--red)';
+    statusEl.textContent = `查詢失敗：${e.message}（可手動填）`;
+  }
+}
+
 function addManualTrade() {
   const sym    = (document.getElementById('mt-sym').value || '').replace(/\xa0/g,'').trim().toUpperCase();
   const name   = (document.getElementById('mt-name').value || '').trim() || sym;
@@ -921,10 +968,21 @@ function addManualTrade() {
   const side   = document.getElementById('mt-side').value;
   const date   = document.getElementById('mt-date').value;
   const qty    = parseFloat(document.getElementById('mt-qty').value) || 0;
-  const price  = parseFloat(document.getElementById('mt-price').value) || 0;
+  let   price  = parseFloat(document.getElementById('mt-price').value) || 0;
   const fee    = parseFloat(document.getElementById('mt-fee').value) || 0;
   const broker = document.getElementById('mt-broker').value;
   const note   = (document.getElementById('mt-note').value || '').trim();
+
+  // CRYPTO：讀 TWD 牌價 + 當日匯率，換算成 USD 單價
+  let cryptoTwdPrice = 0, cryptoFx = 0;
+  if (market === 'CRYPTO' && (side === 'BUY' || side === 'SELL')) {
+    cryptoTwdPrice = parseFloat(document.getElementById('mt-crypto-twd-price').value) || 0;
+    cryptoFx       = parseFloat(document.getElementById('mt-crypto-fx').value) || 0;
+    const st0 = document.getElementById('mt-status');
+    if (cryptoTwdPrice <= 0) { st0.style.color='var(--red)'; st0.textContent='請填當日 BTC 價格（TWD/顆）'; return; }
+    if (cryptoFx <= 0)       { st0.style.color='var(--red)'; st0.textContent='請填當日 USD/TWD 匯率（可點「🔄 查當日」）'; return; }
+    price = cryptoTwdPrice / cryptoFx; // USD 單價
+  }
 
   const st = document.getElementById('mt-status');
   if (!sym)  { st.style.color='var(--red)'; st.textContent='請填寫代碼'; return; }
@@ -966,16 +1024,26 @@ function addManualTrade() {
       date, symbol:sym, name, side, qty, price,
       amount, fee, market, broker, isOption:isOpt, note
     };
+    if (market === 'CRYPTO' && cryptoTwdPrice > 0 && cryptoFx > 0) {
+      trade.priceTWD  = cryptoTwdPrice;
+      trade.fxAtTrade = cryptoFx;
+    }
     mergeNewTrades([trade], '手動輸入', broker);
     st.style.color = 'var(--green)';
-    st.textContent = `已新增：${side === 'BUY' ? '買入' : '賣出'} ${sym} ${qty}股 @${price} → ${brokerMap[broker]||broker}`;
+    if (market === 'CRYPTO') {
+      st.textContent = `已新增：${side==='BUY'?'買入':'賣出'} ${sym} ${qty} @NT$${cryptoTwdPrice.toLocaleString()}/顆（USD ${price.toFixed(2)} @fx ${cryptoFx}）`;
+    } else {
+      st.textContent = `已新增：${side === 'BUY' ? '買入' : '賣出'} ${sym} ${qty}股 @${price} → ${brokerMap[broker]||broker}`;
+    }
   }
 
   addImportLog(`手動新增：${side} ${sym} @${price} 券商=${broker} (${date})`, 'ok');
-  ['mt-sym','mt-name','mt-qty','mt-price','mt-fee','mt-note'].forEach(id => {
+  ['mt-sym','mt-name','mt-qty','mt-price','mt-fee','mt-note','mt-crypto-twd-price','mt-crypto-fx'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const fxSt = document.getElementById('mt-crypto-fx-status');
+  if (fxSt) fxSt.textContent = '';
   setTimeout(() => { const el=document.getElementById('mt-status'); if(el) el.textContent=''; }, 4000);
 }
 
