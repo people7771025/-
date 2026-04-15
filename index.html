@@ -3594,6 +3594,140 @@ function editTradeNote(key) {
   renderTradesPage();
 }
 
+// ── 編輯 / 刪除單筆交易 ──
+function findTradeIndexByTid(tid) {
+  return trades.findIndex(t => tradeId(t) === tid);
+}
+
+function deleteTrade(tid) {
+  const i = findTradeIndexByTid(tid);
+  if (i < 0) { alert('找不到該筆交易（可能已被修改）'); return; }
+  const t = trades[i];
+  const summary = `${t.date}  ${t.symbol}  ${t.side}  qty=${t.qty}  金額=${t.amount}`;
+  if (!confirm(`確定刪除這筆交易？\n\n${summary}\n\n⚠️ 注意：現金帳戶餘額不會自動回補，如需更正請到「現金管理」。`)) return;
+  trades.splice(i, 1);
+  save(KEYS.trades, trades);
+  rebuildFromTrades();
+  renderDashboard();
+  renderTradesPage();
+}
+
+function editTradeModal(tid) {
+  const i = findTradeIndexByTid(tid);
+  if (i < 0) { alert('找不到該筆交易（可能已被修改）'); return; }
+  const t = trades[i];
+  const isCrypto = t.market === 'CRYPTO';
+  const isDividend = t.side === 'DIVIDEND';
+  const brokerOpts = Object.keys(brokerMap).map(b =>
+    `<option value="${b}" ${t.broker===b?'selected':''}>${b}</option>`
+  ).join('');
+  const esc = (s) => (s==null?'':String(s)).replace(/"/g,'&quot;');
+
+  let priceBlock;
+  if (isDividend) {
+    priceBlock = `
+      <div class="field-row">
+        <div class="field"><label>股利金額（總額）</label>
+          <input id="et-amount" type="number" step="any" value="${t.amount||0}"></div>
+        <div class="field"><label>扣稅 / 手續費</label>
+          <input id="et-fee" type="number" step="any" value="${t.fee||0}"></div>
+      </div>`;
+  } else if (isCrypto) {
+    priceBlock = `
+      <div class="field-row">
+        <div class="field"><label>當日 BTC 價格（TWD/顆）</label>
+          <input id="et-twd-price" type="number" step="any" value="${t.priceTWD||''}"></div>
+        <div class="field"><label>當日 USD/TWD 匯率</label>
+          <input id="et-fx" type="number" step="any" value="${t.fxAtTrade||''}"></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin:-4px 0 10px">USD 單價 = TWD價格 ÷ 匯率，儲存時自動重算</div>
+      <div class="field"><label>手續費（USD）</label>
+        <input id="et-fee" type="number" step="any" value="${t.fee||0}"></div>`;
+  } else {
+    priceBlock = `
+      <div class="field-row">
+        <div class="field"><label>成交價（原幣/每股）</label>
+          <input id="et-price" type="number" step="any" value="${t.price||0}"></div>
+        <div class="field"><label>手續費（原幣）</label>
+          <input id="et-fee" type="number" step="any" value="${t.fee||0}"></div>
+      </div>`;
+  }
+
+  const qtyBlock = isDividend ? '' : `
+    <div class="field"><label>數量</label>
+      <input id="et-qty" type="number" step="any" value="${t.qty||0}"></div>`;
+
+  const modal = document.getElementById('modal-overlay');
+  const body  = document.getElementById('modal-body');
+  body.innerHTML = `
+    <div class="modal-title">編輯交易紀錄</div>
+    <div class="modal-sub">${esc(t.symbol)} · ${esc(t.market)} · ${esc(t.side)}${isCrypto?' · 加密貨幣':''}</div>
+    <div class="field-row">
+      <div class="field"><label>日期</label>
+        <input id="et-date" type="date" value="${esc(t.date)}"></div>
+      ${qtyBlock}
+    </div>
+    ${priceBlock}
+    <div class="field-row">
+      <div class="field"><label>券商</label><select id="et-broker">${brokerOpts}</select></div>
+      <div class="field"><label>備註</label><input id="et-note" type="text" value="${esc(t.note)}"></div>
+    </div>
+    <div class="alert alert-warn" style="font-size:11px;margin-top:10px">⚠️ 儲存後會重算庫存與已實現損益，但現金帳戶餘額不會自動調整，如需更正請到「現金管理」。</div>
+    <div class="flex" style="gap:10px;margin-top:12px">
+      <button class="btn btn-green" onclick="saveEditTrade('${tid.replace(/'/g,"\\\\'")}')">儲存變更</button>
+      <button class="btn" onclick="closeModal()">取消</button>
+    </div>
+  `;
+  modal.classList.add('open');
+}
+
+function saveEditTrade(origTid) {
+  const i = findTradeIndexByTid(origTid);
+  if (i < 0) { alert('找不到該筆交易'); closeModal(); return; }
+  const t = { ...trades[i] };
+  const isCrypto = t.market === 'CRYPTO';
+  const isDividend = t.side === 'DIVIDEND';
+
+  const date = document.getElementById('et-date').value;
+  const fee  = parseFloat(document.getElementById('et-fee').value) || 0;
+  const broker = document.getElementById('et-broker').value;
+  const note = document.getElementById('et-note').value;
+  if (!date) { alert('日期不能空'); return; }
+
+  t.date = date; t.fee = fee; t.broker = broker; t.note = note;
+
+  if (isDividend) {
+    const amount = parseFloat(document.getElementById('et-amount').value) || 0;
+    if (amount <= 0) { alert('股利金額必須大於 0'); return; }
+    t.amount = amount;
+    t.qty = 0; t.price = 0;
+  } else {
+    const qty = parseFloat(document.getElementById('et-qty').value) || 0;
+    if (qty <= 0) { alert('數量必須大於 0'); return; }
+    t.qty = qty;
+    if (isCrypto) {
+      const twdPrice = parseFloat(document.getElementById('et-twd-price').value) || 0;
+      const fx       = parseFloat(document.getElementById('et-fx').value) || 0;
+      if (twdPrice <= 0 || fx <= 0) { alert('CRYPTO 必須有 TWD 價格和匯率'); return; }
+      t.priceTWD  = twdPrice;
+      t.fxAtTrade = fx;
+      t.price     = twdPrice / fx;
+    } else {
+      const price = parseFloat(document.getElementById('et-price').value) || 0;
+      if (price <= 0) { alert('成交價必須大於 0'); return; }
+      t.price = price;
+    }
+    t.amount = t.qty * t.price;
+  }
+
+  trades[i] = t;
+  save(KEYS.trades, trades);
+  rebuildFromTrades();
+  closeModal();
+  renderDashboard();
+  renderTradesPage();
+}
+
 function setTradesRange(preset) {
   const from = document.getElementById('trades-date-from');
   const to = document.getElementById('trades-date-to');
@@ -3665,12 +3799,14 @@ function renderTradesPage() {
         <span style="margin-left:auto;font-size:11px;color:var(--muted)">${items.length} 筆</span>
       </div>
       <div class="tbl-wrap"><table><thead><tr>
-        <th>日期</th><th>代碼</th><th>方向</th><th>數量</th><th>價格</th><th>金額</th><th>手續費</th><th>券商</th><th>心得</th><th></th>
+        <th>日期</th><th>代碼</th><th>方向</th><th>數量</th><th>價格</th><th>金額</th><th>手續費</th><th>券商</th><th>心得</th><th>操作</th>
       </tr></thead><tbody>`;
 
     for (const t of items) {
       const key = tradeNoteKey(t);
       const safeKey = key.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const tid = tradeId(t);
+      const safeTid = tid.replace(/'/g,"\\'").replace(/"/g,'&quot;');
       const note = tradeNotes[key] || '';
       const isExpiredNote = (t.note||'').includes('Expired') || (t.note||'').includes('到期');
       const sideTag = isExpiredNote ? '<span class="tag" style="background:rgba(255,209,102,0.15);color:var(--gold)">到期</span>'
@@ -3693,7 +3829,11 @@ function renderTradesPage() {
         <td style="color:var(--muted);font-size:10px">${feeFmt}</td>
         <td style="color:var(--muted);font-size:10px">${t.broker||'—'}</td>
         <td style="max-width:200px;font-size:10px;color:${note?'var(--text)':'var(--dim)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${note||'點 ✎ 新增心得'}">${note||'—'}</td>
-        <td><button class="btn btn-sm" onclick="editTradeNote('${safeKey}')" title="編輯心得">✎</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm" onclick="editTradeNote('${safeKey}')" title="編輯心得">✎</button>
+          <button class="btn btn-sm" onclick="editTradeModal('${safeTid}')" title="編輯交易">✏️</button>
+          <button class="btn btn-sm" onclick="deleteTrade('${safeTid}')" title="刪除交易" style="border-color:var(--red);color:var(--red)">🗑</button>
+        </td>
       </tr>`;
     }
     html += '</tbody></table></div></div>';
