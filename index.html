@@ -934,15 +934,25 @@ function onMtMarketChange() {
   document.getElementById('mt-crypto-row').style.display = isCrypto ? '' : 'none';
 }
 
-// 抓指定日期 USD/TWD（exchangerate.host 免 key）
+// 抓指定日期 USD/TWD（fawazahmed0/currency-api 免 key、CDN 直出）
+// 主：jsdelivr；備援：Cloudflare
 async function fetchHistoricalUsdTwd(date) {
-  const url = `https://api.exchangerate.host/${date}?base=USD&symbols=TWD`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const j = await r.json();
-  const fx = j && j.rates && j.rates.TWD;
-  if (!fx || fx <= 0) throw new Error('rates.TWD 缺失');
-  return fx;
+  const paths = [
+    `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`,
+    `https://${date}.currency-api.pages.dev/v1/currencies/usd.json`
+  ];
+  let lastErr;
+  for (const url of paths) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) { lastErr = new Error(`HTTP ${r.status}`); continue; }
+      const j = await r.json();
+      const fx = j && j.usd && j.usd.twd;
+      if (!fx || fx <= 0) { lastErr = new Error('usd.twd 缺失'); continue; }
+      return fx;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('所有來源都失敗');
 }
 
 async function fetchFxForCryptoTrade() {
