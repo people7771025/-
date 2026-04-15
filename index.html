@@ -1596,40 +1596,81 @@ function addCashLogEntry(date, accountName, currency, amount, type, desc) {
   save(KEYS.cashLog, cashLog);
 }
 
-function settleCashForTrades(newTrades) {
+// 計算某帳戶「若套用所有 trades 的交割」會產生的淨變動
+function computeAccountTradeDelta(accountName) {
+  let delta = 0;
+  for (const t of trades) {
+    if (brokerMap[t.broker] !== accountName) continue;
+    if (t.side === 'BUY')           delta -= (t.amount || 0) + (t.fee || 0);
+    else if (t.side === 'SELL')     delta += (t.amount || 0) - (t.fee || 0);
+    else if (t.side === 'DIVIDEND') delta += (t.amount || 0) - (t.fee || 0);
+  }
+  return delta;
+}
+
+// 一次性遷移：把現有 cashAccounts 的 amount 拆成 baseAmount + 交易變動
+// 執行後：baseAmount = amount - 目前全部 trades 所產生的變動
+function migrateCashBaseAmount() {
+  let migrated = 0;
+  for (const acc of cashAccounts) {
+    if (acc.baseAmount == null) {
+      acc.baseAmount = (acc.amount || 0) - computeAccountTradeDelta(acc.account);
+      migrated++;
+    }
+  }
+  if (migrated > 0) save(KEYS.cash, cashAccounts);
+  return migrated;
+}
+
+// 從 trades 完全重建現金餘額與交割 log（保留 source !== 'trade' 的手動紀錄）
+function rebuildCashFromTrades() {
+  migrateCashBaseAmount();
+
+  // 保留手動 log、清掉交易產生的 log
+  const manualLog = cashLog.filter(e => e.source !== 'trade');
+
+  // 重設每個帳戶回 baseAmount
+  for (const acc of cashAccounts) {
+    acc.amount = acc.baseAmount || 0;
+    acc.updatedAt = acc.updatedAt || new Date().toISOString().slice(0,10);
+  }
+
+  // 依日期疊加所有交易
+  const sorted = [...trades].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+  const tradeLog = [];
   let settled = 0;
-  for (const t of newTrades) {
+  for (const t of sorted) {
     const acc = findCashAccount(t.broker);
     if (!acc) continue;
-
     if (t.side === 'BUY') {
       const debit = (t.amount || 0) + (t.fee || 0);
-      acc.amount -= debit;
-      acc.updatedAt = t.date;
-      addCashLogEntry(t.date, acc.account, acc.currency, -debit, '交割扣款',
-        `買入 ${t.symbol} ${t.qty}股 @${t.price} 手續費${t.fee||0}`);
+      acc.amount -= debit; acc.updatedAt = t.date;
+      tradeLog.push({ date: t.date, account: acc.account, currency: acc.currency, amount: -debit, type: '交割扣款', desc: `買入 ${t.symbol} ${t.qty}股 @${t.price} 手續費${t.fee||0}`, ts: Date.now(), source: 'trade' });
       settled++;
     } else if (t.side === 'SELL') {
       const credit = (t.amount || 0) - (t.fee || 0);
-      acc.amount += credit;
-      acc.updatedAt = t.date;
-      addCashLogEntry(t.date, acc.account, acc.currency, credit, '交割入帳',
-        `賣出 ${t.symbol} ${t.qty}股 @${t.price} 手續費${t.fee||0}`);
+      acc.amount += credit; acc.updatedAt = t.date;
+      tradeLog.push({ date: t.date, account: acc.account, currency: acc.currency, amount: credit, type: '交割入帳', desc: `賣出 ${t.symbol} ${t.qty}股 @${t.price} 手續費${t.fee||0}`, ts: Date.now(), source: 'trade' });
       settled++;
     } else if (t.side === 'DIVIDEND') {
       const credit = (t.amount || 0) - (t.fee || 0);
-      acc.amount += credit;
-      acc.updatedAt = t.date;
-      addCashLogEntry(t.date, acc.account, acc.currency, credit, '股利入帳',
-        `${t.symbol} 股利 ${t.amount} 扣稅${t.fee||0}`);
+      acc.amount += credit; acc.updatedAt = t.date;
+      tradeLog.push({ date: t.date, account: acc.account, currency: acc.currency, amount: credit, type: '股利入帳', desc: `${t.symbol} 股利 ${t.amount} 扣稅${t.fee||0}`, ts: Date.now(), source: 'trade' });
       settled++;
     }
   }
-  if (settled > 0) {
-    save(KEYS.cash, cashAccounts);
-    addLog(`現金連動：${settled} 筆交割已更新對應帳戶`, 'ok');
-  }
+
+  // 合併手動 + 新交易 log，依 ts 排序後截斷到 500
+  cashLog = [...manualLog, ...tradeLog].sort((a,b) => (b.ts||0) - (a.ts||0));
+  if (cashLog.length > 500) cashLog.length = 500;
+
+  save(KEYS.cash, cashAccounts);
+  save(KEYS.cashLog, cashLog);
+  addLog(`現金重建：${cashAccounts.length} 帳戶 · ${settled} 筆交割`, 'ok');
 }
+
+// 舊 API 名稱保留為 rebuildCashFromTrades 的別名（全量重建取代逐筆疊加）
+function settleCashForTrades(_newTrades) { rebuildCashFromTrades(); }
 
 // ══════════════════════════════════════════════════
 // REBUILD INVENTORY FROM SCRATCH
@@ -3018,7 +3059,11 @@ function addCashAccount() {
   if (isNaN(fxToTWD) || fxToTWD <= 0) { showCashStatus('請輸入對台幣匯率', true); return; }
 
   const id = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
-  cashAccounts.push({ id, currency, account, amount, fxToTWD, note, updatedAt: new Date().toISOString().slice(0,10) });
+  // baseAmount = 使用者輸入的「當前餘額」減掉此帳戶現有 trades 的影響
+  // 新帳戶尚未關聯 trades 時 baseAmount === amount
+  const delta = computeAccountTradeDelta(account);
+  const baseAmount = amount - delta;
+  cashAccounts.push({ id, currency, account, amount, baseAmount, fxToTWD, note, updatedAt: new Date().toISOString().slice(0,10) });
   cashFxRates[currency] = fxToTWD;
   save(KEYS.cash, cashAccounts);
   save(KEYS.cashFx, cashFxRates);
@@ -3043,6 +3088,9 @@ function updateCashAmount(id, val) {
   if (isNaN(amt) || amt < 0) return;
   const acc = cashAccounts.find(c => c.id === id);
   if (!acc) return;
+  // 使用者設定的是「目標當前餘額」→ 調整 baseAmount 讓 rebuild 後達到此值
+  const delta = computeAccountTradeDelta(acc.account);
+  acc.baseAmount = amt - delta;
   acc.amount = amt;
   acc.updatedAt = new Date().toISOString().slice(0,10);
   save(KEYS.cash, cashAccounts);
@@ -3604,12 +3652,14 @@ function deleteTrade(tid) {
   if (i < 0) { alert('找不到該筆交易（可能已被修改）'); return; }
   const t = trades[i];
   const summary = `${t.date}  ${t.symbol}  ${t.side}  qty=${t.qty}  金額=${t.amount}`;
-  if (!confirm(`確定刪除這筆交易？\n\n${summary}\n\n⚠️ 注意：現金帳戶餘額不會自動回補，如需更正請到「現金管理」。`)) return;
+  if (!confirm(`確定刪除這筆交易？\n\n${summary}\n\n庫存、已實現損益與現金帳戶都會自動重算。`)) return;
   trades.splice(i, 1);
   save(KEYS.trades, trades);
   rebuildFromTrades();
+  rebuildCashFromTrades();
   renderDashboard();
   renderTradesPage();
+  if (typeof renderCash === 'function') renderCash();
 }
 
 function editTradeModal(tid) {
@@ -3672,7 +3722,7 @@ function editTradeModal(tid) {
       <div class="field"><label>券商</label><select id="et-broker">${brokerOpts}</select></div>
       <div class="field"><label>備註</label><input id="et-note" type="text" value="${esc(t.note)}"></div>
     </div>
-    <div class="alert alert-warn" style="font-size:11px;margin-top:10px">⚠️ 儲存後會重算庫存與已實現損益，但現金帳戶餘額不會自動調整，如需更正請到「現金管理」。</div>
+    <div class="alert alert-info" style="font-size:11px;margin-top:10px">💡 儲存後庫存、已實現損益與現金帳戶都會自動重算。</div>
     <div class="flex" style="gap:10px;margin-top:12px">
       <button class="btn btn-green" onclick="saveEditTrade('${tid.replace(/'/g,"\\\\'")}')">儲存變更</button>
       <button class="btn" onclick="closeModal()">取消</button>
@@ -3723,9 +3773,11 @@ function saveEditTrade(origTid) {
   trades[i] = t;
   save(KEYS.trades, trades);
   rebuildFromTrades();
+  rebuildCashFromTrades();
   closeModal();
   renderDashboard();
   renderTradesPage();
+  if (typeof renderCash === 'function') renderCash();
 }
 
 function setTradesRange(preset) {
@@ -3865,6 +3917,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if (h.isBasis && !oldBasis[s]) { oldBasis[s] = h; migrated++; }
   }
   if (migrated > 0) { save(KEYS.basis, oldBasis); console.log(`遷移 ${migrated} 筆舊基準持倉`); }
+
+  // 遷移：把既有 cashAccounts 的 amount 拆成 baseAmount（若尚未設定）
+  const cashMigrated = migrateCashBaseAmount();
+  if (cashMigrated > 0) console.log(`遷移 ${cashMigrated} 筆現金帳戶 baseAmount`);
 
   renderDashboard();
   renderImportLog();
