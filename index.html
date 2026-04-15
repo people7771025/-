@@ -86,6 +86,8 @@ tbody td{padding:10px 12px;white-space:nowrap}
 .btn-red{background:var(--red2);color:var(--red);border-color:var(--red)}
 .btn-sm{padding:5px 10px;font-size:10px}
 .btn:disabled{opacity:0.35;cursor:not-allowed}
+.btn-armed{background:var(--red)!important;color:#fff!important;border-color:var(--red)!important;animation:armPulse 0.8s ease-in-out infinite}
+@keyframes armPulse{0%,100%{opacity:1}50%{opacity:0.65}}
 /* ─ IMPORT CARDS ─ */
 .import-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
 .import-card{border:1px dashed var(--border2);border-radius:var(--r);padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg2);position:relative}
@@ -1918,7 +1920,7 @@ function renderBasis() {
       <td><span class="tag tag-basis">${h.costMethod}</span></td>
       <td style="color:var(--muted);font-size:10px">${h.broker||'—'}</td>
       <td style="color:var(--muted)">${h.basisDate||'—'}</td>
-      <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="deleteBasis('${sym}')">刪除</button></td>`;
+      <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="armDelete(this, 'deleteBasis', '${sym}')">刪除</button></td>`;
     tbody.appendChild(tr);
   }
 }
@@ -2606,7 +2608,7 @@ function renderHoldings() {
   }
   function removeTd(sym) {
     const safe = sym.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    return `<td style="white-space:nowrap"><button class="btn btn-sm" onclick="editAvgCost('${safe}')" title="修改成本均價" style="margin-right:4px">✎</button><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safe}')">✕</button></td>`;
+    return `<td style="white-space:nowrap"><button class="btn btn-sm" onclick="editAvgCost('${safe}')" title="修改成本均價" style="margin-right:4px">✎</button><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="armDelete(this, 'removeHolding', '${safe}')">✕</button></td>`;
   }
   function srcTd(h) {
     const mktTag = h.market === 'ESB' ? ' <span class="tag" style="background:rgba(255,140,66,0.15);color:#ff8c42">興櫃</span>' : '';
@@ -2772,7 +2774,7 @@ function renderHoldings() {
         <td style="white-space:nowrap">
           <button class="btn btn-sm" onclick="editAvgCost('${safeSym}')" title="修改成本" style="margin-right:3px">✎</button>
           <button class="btn btn-sm" onclick="markOptionExpired('${safeSym}')" title="標記到期" style="margin-right:3px;border-color:var(--gold);color:var(--gold)">⏰</button>
-          <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeHolding('${safeSym}')">✕</button>
+          <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="armDelete(this, 'removeHolding', '${safeSym}')">✕</button>
         </td>`;
       tbOpt.appendChild(tr);
     }
@@ -3225,7 +3227,7 @@ function renderCashSections() {
         <td style="color:var(--muted)">NT$${twdVal.toLocaleString()}</td>
         <td style="color:var(--muted);font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${acc.note || '—'}</td>
         <td style="color:var(--muted);font-size:10px">${acc.updatedAt || '—'}</td>
-        <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="deleteCashAccount('${safeId}')">刪除</button></td>
+        <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="armDelete(this, 'deleteCashAccount', '${safeId}')">刪除</button></td>
       </tr>`;
     }
 
@@ -3254,7 +3256,7 @@ function renderBrokerMap() {
         style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px;min-width:160px">
         ${optionsHtml}
       </select></td>
-      <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="removeBrokerMap('${safeBroker}')">刪除</button></td>
+      <td><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="armDelete(this, 'removeBrokerMap', '${safeBroker}')">刪除</button></td>
     </tr>`;
   }
   html += '</tbody></table>';
@@ -3642,6 +3644,38 @@ function editTradeNote(key) {
   renderTradesPage();
 }
 
+// ══════════════════════════════════════════════════
+// ARM-TO-CONFIRM — 刪除類按鈕雙重確認（第一次點擊變紅倒數，第二次內才觸發）
+// 用法：<button onclick="armDelete(this, 'deleteFn', 'arg1', 'arg2')">🗑</button>
+// ══════════════════════════════════════════════════
+function armDelete(btn, fnName, ...args) {
+  const fn = typeof fnName === 'function' ? fnName : window[fnName];
+  if (typeof fn !== 'function') { console.warn('armDelete: no such function', fnName); return; }
+  const state = armDelete._state || (armDelete._state = new WeakMap());
+
+  if (state.has(btn)) {
+    const info = state.get(btn);
+    clearTimeout(info.timer);
+    btn.innerHTML = info.original;
+    btn.classList.remove('btn-armed');
+    state.delete(btn);
+    fn(...args);
+    return;
+  }
+
+  const original = btn.innerHTML;
+  btn.innerHTML = '⚠ 再點一次';
+  btn.classList.add('btn-armed');
+  btn.title = '3 秒內再點一次才會真的刪除';
+  const timer = setTimeout(() => {
+    if (!state.has(btn)) return;
+    btn.innerHTML = original;
+    btn.classList.remove('btn-armed');
+    state.delete(btn);
+  }, 3000);
+  state.set(btn, { timer, original });
+}
+
 // ── 編輯 / 刪除單筆交易 ──
 function findTradeIndexByTid(tid) {
   return trades.findIndex(t => tradeId(t) === tid);
@@ -3884,7 +3918,7 @@ function renderTradesPage() {
         <td style="white-space:nowrap">
           <button class="btn btn-sm" onclick="editTradeNote('${safeKey}')" title="編輯心得">✎</button>
           <button class="btn btn-sm" onclick="editTradeModal('${safeTid}')" title="編輯交易">✏️</button>
-          <button class="btn btn-sm" onclick="deleteTrade('${safeTid}')" title="刪除交易" style="border-color:var(--red);color:var(--red)">🗑</button>
+          <button class="btn btn-sm" onclick="armDelete(this, 'deleteTrade', '${safeTid}')" title="刪除交易" style="border-color:var(--red);color:var(--red)">🗑</button>
         </td>
       </tr>`;
     }
